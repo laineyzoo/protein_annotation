@@ -28,26 +28,24 @@ GO_ONTOLOGIES = {
     "MOLECULAR_FUNCTION" : "GO:0003674"
 }
 
-PRIMARY_CELL_COMPONENTS = {
-	"NUCLEUS"               : "GO:0005634",
-		"CYTOPLASM"             : "GO:0005737",
-			"MEMBRANE"              : "GO:0016020",
+GO_CELL_COMPONENTS = {
+    "NUCLEUS"               : "GO:0005634",
+    "CYTOPLASM"             : "GO:0005737",
+    "MEMBRANE"              : "GO:0016020",
+    "ENDOPLASMIC_RETICULUM" : "GO:0005783",
+    "RIBOSOMES"             : "GO:0005840",
+    "GOLGI_COMPLEX"         : "GO:0005794",
+    "MITOCHONDRIA"          : "GO:0005739",
+    "CHLOROPLAST"           : "GO:0009507",
+    "NUCLEAR_ENVELOPE"      : "GO:0005635",
+    "VACUOLE"               : "GO:0005773",
     "CELL_WALL"             : "GO:0005618",
+    "PEROXISOMES"           : "GO:0005777",
+    "NUCLEOLUS"             : "GO:0005730",
+    "LYSOSOMES"             : "GO:0005764",
     "CYTOSKELETON"          : "GO:0005856"
+
 }
-
-
-CYTOPLASM_CELL_COMPONENTS = {
-	"ENDOPLASMIC_RETICULUM" : "GO:0005783",
-	"RIBOSOMES"             : "GO:0005840",
-	"GOLGI_COMPLEX"         : "GO:0005794",
-	"MITOCHONDRIA"          : "GO:0005739",
-	"CHLOROPLAST"           : "GO:0009507",
-	"VACUOLE"               : "GO:0005773",
-	"PEROXISOMES"           : "GO:0005777",
-	"LYSOSOMES"             : "GO:0005764"
-}
-
 
 #extend the list of stopwords to include biological terms
 bio_stopwords = ["pubmed",
@@ -64,7 +62,7 @@ ext_stopwords.extend(bio_stopwords)
 ## get all GO terms that are descendants of the given GO term
 def get_descendants(goterm) :
     
-    GO_JSON = "protein_project/go.json"
+    GO_JSON = "go.json"
     f = open(GO_JSON)
     data = json.load(f)
     go_descendants = []
@@ -82,7 +80,7 @@ def get_descendants(goterm) :
 ## get only the direct descendants of the given GO term
 def get_direct_descendants(go_term):
 
-    GO_JSON = "protein_project/go.json"
+    GO_JSON = "go.json"
     f = open(GO_JSON)
     data = json.load(f)
     go_direct = list()
@@ -146,13 +144,17 @@ def print_metrics(actual, predicted):
     performance = metrics.classification_report(actual, predicted, target_names=class_names)
     print >> outfile, "\nPerformance:"
     print >> outfile, performance
+    print(performance)
+
     accuracy = metrics.accuracy_score(actual, predicted)
     print >> outfile, "Accuracy: "+str(accuracy*100)
+    print("Accuracy: ", accuracy*100)
 
     conf_matrix = metrics.confusion_matrix(actual, predicted)
     print >> outfile, "\nConfusion Matrix:"
     print >> outfile, conf_matrix
-    
+    print(conf_matrix)    
+
     f1 = metrics.precision_recall_fscore_support(actual, predicted)
     f1 = f1[2].mean(axis=0)
     
@@ -226,26 +228,29 @@ def train_and_test(X_train, y_train, X_test, y_test):
     print "Training and Testing"
 	
     print >> outfile, "\n=====MULTINOMIAL NAIVE BAYES====="
+    print("\n=====MULTINOMIAL NAIVE BAYES=====")
     t0 = time()
     classifier = MultinomialNB(alpha=.01)
     classifier.fit(X_train, y_train)
-	predicted = classifier.predict(X_test)
+    predicted = classifier.predict(X_test)
 		
     acc_mnb, f1_mnb = print_metrics(y_test, predicted)
     print >> outfile, "\nTime to train (min.): ", (time()-t0)/60
     
-	
-	print >> outfile, "\n========SVM========"
+    
+    print >> outfile, "\n========SVM========"
+    print("\n========SVM========")
     t0 = time()
-    classifier = svm.SVC(decision_function_shape='ovo')
+    classifier = svm.LinearSVC(multi_class='ovr')
     classifier.fit(X_train, y_train)
-	predicted = classifier.predict(X_test)
+    predicted = classifier.predict(X_test)
 	
-	acc_bnb, f1_bnb = print_metrics(y_test, predicted)
-	print >> outfile, "\nTime to train (min.): ", (time()-t0)/60
+    acc_bnb, f1_bnb = print_metrics(y_test, predicted)
+    print >> outfile, "\nTime to train (min.): ", (time()-t0)/60
 
 
     print >> outfile, "=====RANDOM FOREST====="
+    print("\n=====RANDOM FOREST=====")
     t0 = time()
     classifier = RandomForestClassifier(n_estimators=400, n_jobs=10)
     classifier.fit(X_train, y_train)
@@ -256,12 +261,13 @@ def train_and_test(X_train, y_train, X_test, y_test):
     
     
     print >> outfile, "\n=====ADABOOST====="
+    print("\n=====ADABOOST=====")
     t0 = time()
-    base_classifier = svm.SVC()
+    base_classifier = svm.SVC(decision_function_shape='ovr')
     base_classifier.fit(X_train, y_train)
     
-    ada_real = AdaBoostClassifier(base_estimator=base_classifier,learning_rate=1,n_estimators=400,algorithm="SAMME.R")
-    ada_real.fit(X_train_pca, y_train)
+    ada_real = AdaBoostClassifier(base_estimator=base_classifier,learning_rate=1,n_estimators=400,algorithm="SAMME")
+    ada_real.fit(X_train, y_train)
     predicted = ada_real.predict(X_test)
     
     acc_ada, f1_ada = print_metrics(y_test, predicted)
@@ -286,7 +292,8 @@ def k_fold_validation(K, labels, abstracts, pmids_dataset):
     for fold in range(K):
         
         print >> outfile, "\n============ Fold " + str(fold) + " ==============\n"
-        
+        print("\n============ Fold " + str(fold) + " ==============\n")
+	
         k_fold_labels = np.delete(labels_folds,fold,axis=0)
         k_fold_labels = np.hstack(k_fold_labels)
         k_fold_labels = list(k_fold_labels)
@@ -337,7 +344,7 @@ def k_fold_validation(K, labels, abstracts, pmids_dataset):
     print >> outfile, "Random Forest: ", avg_f1[0]
     print >> outfile, "AdaBoost: ", avg_f1[1]
     print >> outfile, "Multinomial NB: ", avg_f1[2]
-    print >> outfile, "Bernoulli NB: ", avg_f1[3]
+    print >> outfile, "SVM: ", avg_f1[3]
     
     print >> outfile, "\nTotal time duration: ", (time() - time_start)/60
 
@@ -361,7 +368,9 @@ proteins = list(set(data[:,0]))
 pmids = list(set(data[:,2]))
 file1.close()
 
+outfile = open("outfile.txt","w+")
 
+print >> outfile, "Start time", time_start
 ## get the cell components descendants ##
 # structure of the dict:
 # descendant_dict["NUCLEUS"] = ['GO:0000', 'GO:0001', etc]
@@ -375,6 +384,7 @@ for cell_comp in cell_components:
 # 0-15: all keys in GO_CELL_COMPONENTS (15) + none of the above (1)
 
 print "Getting abstracts and assigning labels"
+print >> outfile, "Getting abstracts and assigning labels"
 
 labels = list()
 abstracts = list()
@@ -399,10 +409,10 @@ for pmid in pmids:
                 pmids_dataset.append(pmid)
                 belongs_to_component = True
     
-        if belongs_to_component == False:
-            labels.append(len(cell_components))
-            abstracts.append(text)
-            pmids_dataset.append(pmid)
+        #if belongs_to_component == False:
+        #    labels.append(len(cell_components))
+        #    abstracts.append(text)
+        #    pmids_dataset.append(pmid)
 
 
 #shuffle dataset

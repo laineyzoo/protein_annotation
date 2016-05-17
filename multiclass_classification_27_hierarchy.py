@@ -5,7 +5,6 @@ import collections
 import json
 import string
 import re
-import sqlite3
 from time import time
 
 from nltk.corpus import stopwords
@@ -22,10 +21,7 @@ from sklearn import linear_model
 from sklearn import metrics
 from sklearn import svm
 
-##CONNECT TO DB
-DB_NAME = "goa_uniprot_noiea.db"
-conn = sqlite3.connect(DB_NAME)
-c = conn.cursor()
+
 
 #dictionary of important GO terms
 GO_ONTOLOGIES = {
@@ -131,7 +127,7 @@ def shuffle_data(labels1, labels2, abstracts, pmids_dataset):
     
     for i in index_shuffle:
         labels1_shuffle.append(labels1[i])
-        labels2_shuffle.append(labels2[i])
+	labels2_shuffle.append(labels2[i])
         abstracts_shuffle.append(abstracts[i])
         pmids_shuffle.append(pmids_dataset[i])
     
@@ -181,27 +177,25 @@ def print_metrics(actual, predicted):
     return (accuracy, f1)
 
 
-
 #display the classifier performance
 def print_metrics_cytoplasm(actual, predicted):
-	
-	class_names = sorted(list(CYTOPLASM_CELL_COMPONENTS.keys()))
-	class_names.append("OTHER")
-	performance = metrics.classification_report(actual, predicted, target_names=class_names)
-	print("\nPerformance:")
-	print(performance)
-	accuracy = metrics.accuracy_score(actual, predicted)
-	print("Accuracy: ", accuracy*100)
-	
-	conf_matrix = metrics.confusion_matrix(actual, predicted)
-	print("\nConfusion Matrix:")
-	print(conf_matrix)
-	
-	f1 = metrics.precision_recall_fscore_support(actual, predicted)
-	f1 = f1[2].mean(axis=0)
-	
-	return (accuracy, f1)
 
+    class_names = sorted(list(CYTOPLASM_CELL_COMPONENTS.keys()))
+    class_names.append("OTHER")
+    performance = metrics.classification_report(actual, predicted, target_names=class_names)
+    print("\nPerformance:")
+    print(performance)
+    accuracy = metrics.accuracy_score(actual, predicted)
+    print("Accuracy: ", accuracy*100)
+
+    conf_matrix = metrics.confusion_matrix(actual, predicted)
+    print("\nConfusion Matrix:")
+    print(conf_matrix)
+
+    f1 = metrics.precision_recall_fscore_support(actual, predicted)
+    f1 = f1[2].mean(axis=0)
+
+    return (accuracy, f1)
 
 
 # remove duplicate papers/proteins appearing in both train and test
@@ -251,7 +245,7 @@ def cytoplasm_train_and_test(X_train, y_train, X_test, y_test):
     classifier.fit(X_train, y_train)
     predicted = classifier.predict(X_test)
 
-    acc_mnb, f1_mnb = print_metrics(y_test, predicted)
+    acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test, predicted)
     print("\nTime to train (min.): ", (time()-t0)/60)
 
 
@@ -261,8 +255,20 @@ def cytoplasm_train_and_test(X_train, y_train, X_test, y_test):
     classifier.fit(X_train, y_train)
     predicted = classifier.predict(X_test)
 	
-    acc_svm, f1_svm = print_metrics(y_test, predicted)
+    acc_svm, f1_svm = print_metrics_cytoplasm(y_test, predicted)
     print("\nTime to train (min.): ", (time()-t0)/60)
+
+
+
+    print("\n=====ADABOOST=====")
+
+    ada_real = AdaBoostClassifier(learning_rate=1,n_estimators=400,algorithm="SAMME.R")
+    ada_real.fit(X_train, y_train)
+    predicted = ada_real.predict(X_test)
+
+    acc_ada, f1_ada = print_metrics_cytoplasm(y_test, predicted)
+    print("\nTime to train (min.): ", (time()-t0)/60)
+
 
 
     print("=====RANDOM FOREST=====")
@@ -271,7 +277,7 @@ def cytoplasm_train_and_test(X_train, y_train, X_test, y_test):
     classifier.fit(X_train, y_train)
     predicted = classifier.predict(X_test)
 	
-    acc_forest, f1_forest = print_metrics(y_test, predicted)
+    acc_forest, f1_forest = print_metrics_cytoplasm(y_test, predicted)
     print("\nTime to train (min.): ", (time()-t0)/60)
 
 
@@ -282,7 +288,7 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     print("Vectorizing features")
     vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
     X_train = vectorizer.fit_transform(X_train)
-    indexes = list(np.where(y1_train==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0])
+    indexes = np.where(y1_train==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     X_train_cytoplasm = X_train[indexes]
     y_train_cytoplasm = y2_train[indexes]
 
@@ -314,10 +320,10 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     acc_mnb, f1_mnb = print_metrics(y1_test, predicted)
     print("\nTime to train (min.): ", (time()-t0)/60)
 	
-	#re-classify the cytoplasm datapoints
+    #re-classify the cytoplasm datapoints
     index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     index2 = np.where(y2_test!=-1)[0]
-    indexes = list(np.intersect1d(index1, index2))
+    indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     cytoplasm_train_and_test(X_train_cytoplasm, y_train_cytoplasm, X_test_cytoplasm, y_test_cytoplasm)
@@ -333,10 +339,10 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     acc_svm, f1_svm = print_metrics(y1_test, predicted)
     print("\nTime to train (min.): ", (time()-t0)/60)
 	
-	#re-classify the cytoplasm datapoints
+    #re-classify the cytoplasm datapoints
     index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     index2 = np.where(y2_test!=-1)[0]
-    indexes = list(np.intersect1d(index1, index2))
+    indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     cytoplasm_train_and_test(X_train_cytoplasm, y_train_cytoplasm, X_test_cytoplasm, y_test_cytoplasm)
@@ -355,7 +361,7 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     #re-classify the cytoplasm datapoints
     index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     index2 = np.where(y2_test!=-1)[0]
-    indexes = list(np.intersect1d(index1, index2))
+    indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     cytoplasm_train_and_test(X_train_cytoplasm, y_train_cytoplasm, X_test_cytoplasm, y_test_cytoplasm)
@@ -375,7 +381,7 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     #re-classify the cytoplasm datapoints
     index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     index2 = np.where(y2_test!=-1)[0]
-    indexes = list(np.intersect1d(index1, index2))
+    indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     cytoplasm_train_and_test(X_train_cytoplasm, y_train_cytoplasm, X_test_cytoplasm, y_test_cytoplasm)
@@ -388,47 +394,46 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
 #K-fold validation (train and testing are called from here)
 def k_fold_validation(K, labels1, labels2, abstracts, pmids_dataset):
     
-	labels1_folds = np.array_split(labels, K)
-	labels2_folds = np.array_split(labels, K)
-	abstracts_folds = np.array_split(abstracts, K)
-	pmids_dataset_folds = np.array_split(pmids_dataset, K)
-
+	labels1_folds = np.array_split(labels1, K)
+        labels2_folds = np.array_split(labels2, K)
+    	abstracts_folds = np.array_split(abstracts, K)
+    	pmids_dataset_folds = np.array_split(pmids_dataset, K)
+    
 	n_classifiers = 3
 	accuracy_mat = np.empty([K, n_classifiers], dtype=float)
 	f1_mat = np.empty([K, n_classifiers], dtype=float)
-	
-	
+		
+	fold = 1
 	for fold in range(K):
 	
 		print("\n============ Fold " + str(fold) + " ==============\n")
-        
-		
-		k_fold_labels1 = np.delete(labels1_folds,fold,axis=0)
-		k_fold_labels1 = np.hstack(k_fold_labels1)
-		k_fold_labels1 = list(k_fold_labels1)
-		
-		k_fold_labels2 = np.delete(labels2_folds,fold,axis=0)
-		k_fold_labels2 = np.hstack(k_fold_labels2)
-		k_fold_labels2 = list(k_fold_labels2)
 
-		k_fold_abstracts= np.delete(abstracts_folds,fold,axis=0)
-		k_fold_abstracts = np.hstack(k_fold_abstracts)
-		k_fold_abstracts = list(k_fold_abstracts)
-	
-		pmids_array = np.delete(pmids_dataset_folds,fold,axis=0)
-		k_fold_pmids = np.hstack(pmids_array)
-		k_fold_pmids = list(k_fold_pmids)
-	
-		X_train = k_fold_abstracts
-		y1_train = k_fold_labels1
+        	k_fold_labels1 = np.delete(labels1_folds,fold,axis=0)
+       		k_fold_labels1 = np.hstack(k_fold_labels1)
+        	k_fold_labels1 = list(k_fold_labels1)
+        
+                k_fold_labels2 = np.delete(labels2_folds,fold,axis=0)
+                k_fold_labels2 = np.hstack(k_fold_labels2)
+                k_fold_labels2 = list(k_fold_labels2)
+
+        	k_fold_abstracts = np.delete(abstracts_folds,fold,axis=0)
+        	k_fold_abstracts = np.hstack(k_fold_abstracts)
+        	k_fold_abstracts = list(k_fold_abstracts)
+        
+        	pmids_array = np.delete(pmids_dataset_folds,fold,axis=0)
+        	k_fold_pmids = np.hstack(pmids_array)
+        	k_fold_pmids = list(k_fold_pmids)
+        
+        	X_train = k_fold_abstracts
+        	y1_train = k_fold_labels1
 		y2_train = k_fold_labels2
-		pmids_train = k_fold_pmids
-	
-		X_test = list(abstracts_folds[fold])
-		y1_test = list(labels1_folds[fold])
+        	pmids_train = k_fold_pmids
+        
+        	X_test = list(abstracts_folds[fold])
+        	y1_test = list(labels1_folds[fold])
 		y2_test = list(labels2_folds[fold])
-		pmids_test = list(pmids_dataset_folds[fold])
-		
+        	pmids_test = list(pmids_dataset_folds[fold])
+        
 		#remove duplicates from the test set
 		(X_test, y1_test, y2_test) = remove_duplicate_papers(pmids_train, X_test, y1_test, y2_test, pmids_test)
         
@@ -475,9 +480,15 @@ file1 = open("protein_records.csv","r")
 reader = csv.reader(file1)
 data = np.array(list(reader))
 data = data[data[:,4]=="C"]
+
+file2 = open("pubmed_records.csv","r")
+reader = csv.reader(file2)
+data2 = np.array(list(reader))
+
 proteins = list(set(data[:,0]))
 pmids = list(set(data[:,2]))
 file1.close()
+
 
 ## get the cell components descendants ##
 # structure of the dict:
@@ -508,12 +519,10 @@ for pmid in pmids:
 
     matching_proteins = data[data[:,2]==pmid]
     go_terms = list(set(matching_proteins[:,1]))
-    c.execute("SELECT abstract FROM publications WHERE pubmed_id=" + pmid + " LIMIT 1")
-    conn.commit()
-    handle = c.fetchall()
-    text = handle[0][0]
+    matching_pub = data2[data2[:,1]==pmid]
+    text = matching_pub[0][4]
     text = text_preprocessing(text)
-    
+	
     for term in go_terms:
         
         for i in range(len(primary_components)):
@@ -522,9 +531,9 @@ for pmid in pmids:
                 abstracts.append(text)
                 pmids_dataset.append(pmid)
 
-				#check if this GO term is in the cytoplasm.
-				#if yes: check which part of the cytoplasm (default is 9 which is in cytoplasm but we don't know which part)
-				#else: label as non-cytoplasm (-1)
+		#check if this GO term is in the cytoplasm.
+		#if yes: check which part of the cytoplasm (default is 9 which is in cytoplasm but we don't know which part)
+		#else: label as non-cytoplasm (-1)
                 if primary_components[i] == "CYTOPLASM":
                     cytoplasm_labels.append(cytoplasm_count)
                     for i in range(len(cytoplasm_components)):
@@ -533,8 +542,9 @@ for pmid in pmids:
                 else:
                     cytoplasm_labels.append(-1)
 
+
 #shuffle dataset
-(primary_labels, cytoplasm_labels, abstracts, pmids_dataset) = shuffle_data(primary_labels, cytoplasm_labels, abstracts, pmids_dataset)
+(primary_labels, cytoplasm_labels, abstracts, pmids_dataset) = shuffle_data(primary_labels, cytoplasm_labels,abstracts, pmids_dataset)
 
 #k-fold validation
 K=5 #K-fold validation
