@@ -32,10 +32,17 @@ GO_ONTOLOGIES = {
 
 PRIMARY_CELL_COMPONENTS = {
     "NUCLEUS"               : "GO:0005634",
-    "CYTOPLASM"             : "GO:0005737",
     "MEMBRANE"              : "GO:0016020",
     "CELL_WALL"             : "GO:0005618",
-    "CYTOSKELETON"          : "GO:0005856"
+    "CYTOSKELETON"          : "GO:0005856",
+    "ENDOPLASMIC_RETICULUM" : "GO:0005783",
+    "RIBOSOMES"             : "GO:0005840",
+    "GOLGI_COMPLEX"         : "GO:0005794",
+    "MITOCHONDRIA"          : "GO:0005739",
+    "CHLOROPLAST"           : "GO:0009507",
+    "VACUOLE"               : "GO:0005773",
+    "PEROXISOMES"           : "GO:0005777",
+    "LYSOSOMES"             : "GO:0005764"
 }
 
 PRIMARY_CELL_COMPONENTS_ID = {
@@ -299,7 +306,7 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     y1_test = np.array(y1_test)
     y2_test = np.array(y2_test)
 	
-    indexes = np.where(y1_train==1)[0]
+    indexes = np.where(y1_train==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     X_train_cytoplasm = X_train[indexes]
     y_train_cytoplasm = y2_train[indexes]
 
@@ -329,18 +336,18 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     acc_mnb, f1_mnb = print_metrics(y1_test, predicted)
 	
     #re-classify the cytoplasm datapoints
-    index1 = np.where(predicted==1)[0]
-    index2 = np.where(y2_test!=-1)[0]
+    index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
+    index2 = np.where(y2_test==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     
-    print("CYTOPLASM CLASSIFICATION")
-    classifier2 = MultinomialNB(alpha=.01)
-    classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
-    predicted2 = classifier2.predict(X_test_cytoplasm)
+    #print("\nCYTOPLASM CLASSIFICATION")
+    #classifier2 = MultinomialNB(alpha=.01)
+    #classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
+    #predicted2 = classifier2.predict(X_test_cytoplasm)
 
-    acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)	
+    #acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)	
 	
 
     print("\n========SVM========")
@@ -353,18 +360,18 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     print("\nTime to train (min.): ", (time()-t0)/60)
 	
     #re-classify the cytoplasm datapoints
-    index1 = np.where(predicted==1)[0]
-    index2 = np.where(y2_test!=-1)[0]
+    index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
+    index2 = np.where(y2_test==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
     
-    print("CYTOPLASM CLASSIFICATION")
-    classifier2 = svm.LinearSVC(multi_class='ovr')
-    classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
-    predicted2 = classifier2.predict(X_test_cytoplasm)
+    #print("\nCYTOPLASM CLASSIFICATION")
+    #classifier2 = svm.LinearSVC(multi_class='ovr')
+    #classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
+    #predicted2 = classifier2.predict(X_test_cytoplasm)
 
-    acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
+    #acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
 
 
 
@@ -378,18 +385,18 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     print("\nTime to train (min.): ", (time()-t0)/60)
 
     #re-classify the cytoplasm datapoints
-    index1 = np.where(predicted==1)[0]
-    index2 = np.where(y2_test!=-1)[0]
+    index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
+    index2 = np.where(y2_test==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
   
-    print("CYTOPLASM CLASSIFICATION")
-    classifier2 = AdaBoostClassifier(learning_rate=1,n_estimators=400,algorithm="SAMME.R")
-    classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
-    predicted2 = classifier2.predict(X_test_cytoplasm)
+    #print("\nCYTOPLASM CLASSIFICATION")
+    #classifier2 = AdaBoostClassifier(learning_rate=1,n_estimators=400,algorithm="SAMME.R")
+    #classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
+    #predicted2 = classifier2.predict(X_test_cytoplasm)
 
-    acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
+    #acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
 
 
 
@@ -403,18 +410,18 @@ def train_and_test(X_train, y1_train, y2_train, X_test, y1_test, y2_test):
     print("\nTime to train (min.): ", (time()-t0)/60)
 
     #re-classify the cytoplasm datapoints
-    index1 = np.where(predicted==1)[0]
-    index2 = np.where(y2_test!=-1)[0]
+    index1 = np.where(predicted==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
+    index2 = np.where(y2_test==PRIMARY_CELL_COMPONENTS_ID["CYTOPLASM"])[0]
     indexes = np.intersect1d(index1, index2)
     X_test_cytoplasm = X_test[indexes]
     y_test_cytoplasm = y2_test[indexes]
   
-    print("CYTOPLASM CLASSIFICATION")
-    classifier2 = RandomForestClassifier(n_estimators=400)
-    classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
-    predicted2 = classifier2.predict(X_test_cytoplasm)
+    #print("\nCYTOPLASM CLASSIFICATION")
+    #classifier2 = RandomForestClassifier(n_estimators=400)
+    #classifier2.fit(X_train_cytoplasm, y_train_cytoplasm)
+    #predicted2 = classifier2.predict(X_test_cytoplasm)
 
-    acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
+    #acc_mnb, f1_mnb = print_metrics_cytoplasm(y_test_cytoplasm, predicted2)
 
 
 
@@ -545,7 +552,6 @@ abstracts = list()
 pmids_dataset = list() #every datapoint will have an associated pubmed id in this list
 
 
-found_cytoplasm_part = False
 
 for pmid in pmids:
     matching_proteins = data[data[:,2]==pmid]
@@ -560,14 +566,10 @@ for pmid in pmids:
                 abstracts.append(text)
                 pmids_dataset.append(pmid)
                 if primary_components[i] == "CYTOPLASM":
-                    found_cytoplasm_part = False
-                    for j in range(len(cytoplasm_components)):
-                        if term in cytoplasm_descendant_dict[cytoplasm_components[j]]:
-                            cytoplasm_labels.append(j)
-			    found_cytoplasm_part = True
-			    break
-                    if found_cytoplasm_part == False:
-			cytoplasm_labels.append(cytoplasm_count)
+                    cytoplasm_labels.append(cytoplasm_count)
+                    for i in range(len(cytoplasm_components)):
+                        if term in cytoplasm_descendant_dict[cytoplasm_components[i]]:
+                            cytoplasm_labels.append(i)
                 else:
                     cytoplasm_labels.append(-1)
 
@@ -579,8 +581,7 @@ for pmid in pmids:
 #K=5 #K-fold validation
 #k_fold_validation(K, primary_labels, cytoplasm_labels, abstracts, pmids_dataset)
 
-
-half = (len(primary_labels)/5)*4
+half = len(primary_labels)/2
 X_train = abstracts[:half]
 y1_train = primary_labels[:half]
 y2_train = cytoplasm_labels[:half]
