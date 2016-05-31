@@ -20,7 +20,7 @@ from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn import linear_model
 from sklearn import metrics
 from sklearn import svm
-
+from sklearn import cluster
 
 #dictionary of important GO terms
 GO_ONTOLOGIES = {
@@ -194,14 +194,9 @@ def text_preprocessing(text):
     return text
 
 #display the classifier performance
-def print_metrics(actual, predicted, ont):
+def print_metrics(actual, predicted):
 
-    class_names = cell_components
-    if ont == "P":
-        class_names = biological_process
-    elif ont == "F":
-        class_names = molecular_function
-    performance = metrics.classification_report(actual, predicted, target_names=class_names)
+    performance = metrics.classification_report(actual, predicted, target_names=cell_components)
     print("\nPerformance:")
     print(performance)
 
@@ -220,7 +215,7 @@ def print_metrics(actual, predicted, ont):
 
 
 # remove duplicate papers/proteins appearing in both train and test
-def remove_duplicate_papers(X_train, y_train, pmids_train, X_test, y_test, pmids_test, ont):
+def remove_duplicate_papers(X_train, y_train, pmids_train, X_test, y_test, pmids_test):
 
     print("Remove duplicates")
     # papers in the train set should not be in the test set
@@ -235,11 +230,6 @@ def remove_duplicate_papers(X_train, y_train, pmids_train, X_test, y_test, pmids
 
 
     # papers associated with the same protein should not be in both train and test sets
-    proteins = proteins_cc
-    if ont == "P":
-        proteins = proteins_bp
-    elif ont == "F":
-        proteins = proteins_mf
     for protein in proteins:
     
         #get the pubmed ids of papers associated with this protein
@@ -262,7 +252,7 @@ def remove_duplicate_papers(X_train, y_train, pmids_train, X_test, y_test, pmids
 
 
 #training and testing phase with 4 types of classifiers
-def train_and_test(X_train, y_train, X_test, y_test, ont):
+def train_and_test(X_train, y_train, X_test, y_test):
     
     print("Vectorizing features")
     vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
@@ -290,7 +280,7 @@ def train_and_test(X_train, y_train, X_test, y_test, ont):
     classifier.fit(X_train, y_train)
     predicted = classifier.predict(X_test)
 		
-    acc_mnb, f1_mnb = print_metrics(y_test, predicted, ont)
+    acc_mnb, f1_mnb = print_metrics(y_test, predicted)
     
     
     print("\n========SVM========")
@@ -299,31 +289,31 @@ def train_and_test(X_train, y_train, X_test, y_test, ont):
     classifier.fit(X_train, y_train)
     predicted = classifier.predict(X_test)
 	
-    acc_svm, f1_svm = print_metrics(y_test, predicted, ont)
+    acc_svm, f1_svm = print_metrics(y_test, predicted)
 
 
    
-    #print("\n=====RANDOM FOREST=====")
-    #t0 = time()
-    #classifier = RandomForestClassifier(n_estimators=400, n_jobs=10)
-    #classifier.fit(X_train, y_train)
-    #predicted = classifier.predict(X_test)
+    print("\n=====RANDOM FOREST=====")
+    t0 = time()
+    classifier = RandomForestClassifier(n_estimators=400, n_jobs=10)
+    classifier.fit(X_train, y_train)
+    predicted = classifier.predict(X_test)
     
-    #acc_rf, f1_rf = print_metrics(y_test, predicted, ont)
+    acc_rf, f1_rf = print_metrics(y_test, predicted)
     
 
-    return (acc_mnb, f1_mnb, acc_svm, f1_svm)
+    return (acc_mnb, f1_mnb, acc_svm, f1_svm, acc_rf, f1_rf)
 
 
 
 #K-fold validation (train and testing are called from here)
-def k_fold_validation(K, labels, abstracts, pmids_dataset, ont):
+def k_fold_validation(K, labels, abstracts, pmids_dataset):
     
     labels_folds = np.array_split(labels, K)
     abstracts_folds = np.array_split(abstracts, K)
     pmids_dataset_folds = np.array_split(pmids_dataset, K)
     
-    n_classifiers = 2
+    n_classifiers = 3
     accuracy_mat = np.empty([K, n_classifiers], dtype=float)
     f1_mat = np.empty([K, n_classifiers], dtype=float)
     
@@ -352,18 +342,18 @@ def k_fold_validation(K, labels, abstracts, pmids_dataset, ont):
         pmids_test = list(pmids_dataset_folds[fold])
         
         #remove duplicates from the test set
-        (X_test, y_test) = remove_duplicate_papers(k_fold_abstracts, k_fold_labels, k_fold_pmids, X_test, y_test, pmids_test, ont)
+        (X_test, y_test) = remove_duplicate_papers(k_fold_abstracts, k_fold_labels, k_fold_pmids, X_test, y_test, pmids_test)
         
         #start training and testing
-        (acc1, f1_1,  acc2, f1_2, acc3, f1_3) = train_and_test(k_fold_abstracts, k_fold_labels, X_test, y_test, ont)
+        (acc1, f1_1,  acc2, f1_2, acc3, f1_3) = train_and_test(k_fold_abstracts, k_fold_labels, X_test, y_test)
         
         accuracy_mat[fold][0] = acc1*100
         accuracy_mat[fold][1] = acc2*100
-        #accuracy_mat[fold][2] = acc3*100
+        accuracy_mat[fold][2] = acc3*100
         #accuracy_mat[fold][3] = acc4*100
         f1_mat[fold][0] = f1_1*100
         f1_mat[fold][1] = f1_2*100
-        #f1_mat[fold][2] = f1_3*100
+        f1_mat[fold][2] = f1_3*100
         #f1_mat[fold][3] = f1_4*100
 
     avg_acc = accuracy_mat.mean(axis=0)
@@ -374,13 +364,13 @@ def k_fold_validation(K, labels, abstracts, pmids_dataset, ont):
     print("\nAverage Accuracy:\n")
     print("MNB: ", avg_acc[0])
     print("SVM: ", avg_acc[1])
-    #print("Random Forest: ", avg_acc[2])
+    print("Random Forest: ", avg_acc[2])
     #print("SVM: ", avg_acc[3])
     
     print("\nAverage F1-score:\n")
     print("MNB: ", avg_f1[0])
     print("SVM: ", avg_f1[1])
-    #print("Random Forest: ", avg_f1[2])
+    print("Random Forest: ", avg_f1[2])
     #print("SVM: ", avg_f1[3])
     
     print("\nTotal time duration: ", (time() - time_start)/60)
@@ -438,12 +428,13 @@ print("Molecular function: ", len(molecular_function))
 for molecule_func in molecular_function:
     descendant_dict_mf[molecule_func] = get_descendants(GO_MOLECULAR_FUNCTION[molecule_func])
 
-#class labels:
-# 0-15: all keys in GO_CELL_COMPONENTS (15) + none of the above (1)
 
-print("\nGetting abstracts and assigning labels")
-print("\nCellular component")
+file1.close()
 
+
+print("Getting abstracts")
+
+print("\nCellular Components")
 labels_cc = list()
 abstracts_cc = list()
 pmids_dataset_cc = list() #every datapoint will have an associated pubmed id in this list
@@ -463,6 +454,12 @@ for pmid in pmids_cc:
                 abstracts_cc.append(text)
                 pmids_dataset_cc.append(pmid)
     
+
+
+(labels_cc, abstracts_cc, pmids_dataset_cc) = shuffle_data(labels_cc, abstracts_cc, pmids_dataset_cc)
+
+vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+X_cc = vectorizer.fit_transform(abstracts_cc)
 
 print("\nBiological process")
 
@@ -485,6 +482,10 @@ for pmid in pmids_bp:
                 abstracts_bp.append(text)
                 pmids_dataset_bp.append(pmid)
 
+(labels_bp, abstracts_bp, pmids_dataset_bp) = shuffle_data(labels_bp, abstracts_bp, pmids_dataset_bp)
+
+vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+X_bp = vectorizer.fit_transform(abstracts_bp)
 
 print("\nMolecular function")
 
@@ -508,20 +509,59 @@ for pmid in pmids_mf:
                 pmids_dataset_mf.append(pmid)
 
 
-#shuffle dataset
-(labels_cc, abstracts_cc, pmids_dataset_cc) = shuffle_data(labels_cc, abstracts_cc, pmids_dataset_cc)
-(labels_bp, abstracts_bp, pmids_dataset_bp) = shuffle_data(labels_bp, abstracts_bp, pmids_dataset_bp)
+
 (labels_mf, abstracts_mf, pmids_dataset_mf) = shuffle_data(labels_mf, abstracts_mf, pmids_dataset_mf)
 
+vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+X_mf = vectorizer.fit_transform(abstracts_mf)
 
-#k-fold validation
-K=5 #K-fold validation
-print("\n-------Train and Test for CELLULAR COMPONENT-------\n")
-k_fold_validation(K, labels_cc, abstracts_cc, pmids_dataset_cc, "C")
-print("\n-------Train and Test for BIOLOGICAL PROCESS-------\n")
-k_fold_validation(K, labels_bp, abstracts_bp, pmids_dataset_bp, "P")
-print("\n-------Train and Test for MOLECULAR FUNCTION-------\n")
-k_fold_validation(K, labels_mf, abstracts_mf, pmids_dataset_mf, "F")
+
+iter = 5
+score_mat = np.empty([iter, len(range(10,21))], dtype=float)
+print("\nClustering Cellular Components")
+for i in range(iter):
+	for k in range(10,21):
+   		k_means = cluster.KMeans(n_clusters=k, init="k-means++")
+    		k_means.fit(X_cc)
+    		cluster_labels = k_means.labels_
+    		score = metrics.silhouette_score(X_cc, cluster_labels, metric='cosine')
+		score_mat[i,k-10] = score
+
+
+mean_scores = score_mat.mean(axis=0)
+print("Mean scores:\n", mean_scores)
+
+
+score_mat = np.empty([iter, len(range(20,30))], dtype=float)
+print("\nClustering Biological Processes")
+for i in range(iter):
+        for k in range(20,30):
+                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
+                k_means.fit(X_bp)
+                cluster_labels = k_means.labels_
+                score = metrics.silhouette_score(X_bp, cluster_labels, metric='cosine')
+                score_mat[i,k-20] = score
+
+
+mean_scores = score_mat.mean(axis=0)
+print("Mean scores:\n", mean_scores)
+
+
+
+score_mat = np.empty([iter, len(range(15,25))], dtype=float)
+print("\nClustering Molecular Function")
+for i in range(iter):
+        for k in range(15,25):
+                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
+                k_means.fit(X_mf)
+                cluster_labels = k_means.labels_
+                score = metrics.silhouette_score(X_mf, cluster_labels, metric='cosine')
+                score_mat[i,k-15] = score
+
+
+mean_scores = score_mat.mean(axis=0)
+print("Mean scores:\n", mean_scores)
+
 
 
 print("\nDONE!\n")

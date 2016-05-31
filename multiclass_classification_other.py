@@ -1,3 +1,4 @@
+from __future__ import print_function
 
 import numpy as np
 import csv
@@ -285,7 +286,23 @@ def train_and_test(X_train, y_train, X_test, y_test):
     predicted = classifier.predict(X_test)
     predicted_prob = classifier.predict_proba(X_test)
 
-    print(predicted_prob)	
+    predicted_prob_class = list()
+    for i in range(len(predicted)):
+        print("Probabilities:\n", predicted_prob[i])
+        print("Actual: ", y_test[i])
+        
+        s = predicted_prob[i]
+        sorted_index = sorted(range(len(s)), key=lambda k: s[k])
+	predicted_classes = sorted_index[len(sorted_index)-3:len(sorted_index)]
+	print("Predicted classes: ", predicted_classes)
+        if y_test[i] in predicted_classes:
+            predicted_prob_class.append(y_test[i])
+	else:
+            predicted_prob_class.append(predicted[i])
+
+    print("\nPerformance using probabilities")
+    acc, f1 = print_metrics(y_test, predicted_prob_class)
+    print("\nPerformance w/o probabilities")
     acc_mnb, f1_mnb = print_metrics(y_test, predicted)
 	
     
@@ -306,19 +323,25 @@ def train_and_test(X_train, y_train, X_test, y_test):
     predicted = classifier.predict(X_test)
     predicted_prob = classifier.predict_proba(X_test)
 
-    print(predicted_prob)
+    predicted_prob_class = list()
+    for i in range(len(predicted)):
+        print("Probabilities:\n", predicted_prob[i])
+        print("Actual: ", y_test[i])
+
+        s = predicted_prob[i]
+        sorted_index = sorted(range(len(s)), key=lambda k: s[k])
+        predicted_classes = sorted_index[len(sorted_index)-3:len(sorted_index)]
+        print("Predicted classes: ", predicted_classes)
+        if y_test[i] in predicted_classes:
+            predicted_prob_class.append(y_test[i])
+        else:
+            predicted_prob_class.append(predicted[i])
+
+    print("\nPerformance using probabilities")
+    acc, f1 = print_metrics(y_test, predicted_prob_class)
+    print("\nPerformance w/o probabilities")
     acc_ovr, f1_ovr = print_metrics(y_test, predicted)    
-    #print("\n=====ADABOOST=====")
-	
 
-    #classifier = svm.SVC(decision_function_shape='ovr')
-    #classifier.fit(X_train, y1_train)
-    #ada_real = AdaBoostClassifier(base_estimator=classifier,learning_rate=1,n_estimators=400,algorithm="SAMME")
-    #ada_real.fit(X_train, y1_train)
-    #predicted = ada_real.predict(X_test)
-
-    #acc_ada, f1_ada = print_metrics(y1_test, predicted)
-  
 
 
     print("\n=====RANDOM FOREST=====")
@@ -450,7 +473,6 @@ abstracts = list()
 pmids_dataset = list() #every datapoint will have an associated pubmed id in this list
 
 
-
 other_go_terms = list()
 for pmid in pmids:
     matching_proteins = data[data[:,2]==pmid]
@@ -459,30 +481,20 @@ for pmid in pmids:
     text = matching_pub[0][4]
     text = text_preprocessing(text)
     
-    belongs_to_component = False
     for term in go_terms:
         for i in range(len(primary_components)):
             if term in primary_descendant_dict[primary_components[i]]:
                 primary_labels.append(i)
                 abstracts.append(text)
                 pmids_dataset.append(pmid)
-		belongs_to_component = True
-    if belongs_to_component == False:
-        other_go_terms.append(term)
 
 
-other_go_terms = sorted(list(set(other_go_terms)))
-
-for i in range(len(other_go_terms)):
-    print "Term: " + other_go_terms[i] + " Name: " + define_go_term(other_go_terms[i])
-print("Total: ", len(other_go_terms))
+#shuffle dataset
+(primary_labels,  abstracts, pmids_dataset) = shuffle_data(primary_labels,abstracts, pmids_dataset)
 
 #k-fold validation
 #K=5 #K-fold validation
 #k_fold_validation(K, primary_labels, abstracts, pmids_dataset)
-
-#shuffle dataset
-(primary_labels,  abstracts, pmids_dataset) = shuffle_data(primary_labels,abstracts, pmids_dataset)
 
 half = (len(primary_labels)/5)*4
 X_train = abstracts[:half]
