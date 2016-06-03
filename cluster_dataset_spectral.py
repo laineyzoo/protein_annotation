@@ -518,13 +518,12 @@ X_mf = vectorizer.fit_transform(abstracts_mf)
 
 iter = 5
 score_mat = np.empty([iter, len(range(10,21))], dtype=float)
-print("\nClustering Cellular Components")
+print("\nSpectral Clustering Cellular Components")
 for i in range(iter):
 	for k in range(10,21):
-		print("k=", k)
-   		k_means = cluster.KMeans(n_clusters=k, init="k-means++")
-    		k_means.fit(X_cc)
-    		cluster_labels = k_means.labels_
+   		spectral = cluster.SpectralClustering(n_clusters=k, eigen_solver='arpack', affinity='cosine')
+    		spectral.fit(X_cc)
+    		cluster_labels = spectral.labels_
     		score = metrics.silhouette_score(X_cc, cluster_labels, metric='cosine')
 		score_mat[i,k-10] = score
 
@@ -537,9 +536,9 @@ print("Mean scores:\n", mean_scores)
 #print("\nClustering Biological Processes")
 #for i in range(iter):
 #        for k in range(20,30):
-#                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
-#                k_means.fit(X_bp)
-#                cluster_labels = k_means.labels_
+#                spectral = cluster.SpectralClustering(n_clusters=k, eigen_solver='arpack', affinity='cosine')
+#                spectral.fit(X_bp)
+#                cluster_labels = spectral.labels_
 #                score = metrics.silhouette_score(X_bp, cluster_labels, metric='cosine')
 #                score_mat[i,k-20] = score
 
@@ -550,14 +549,13 @@ print("Mean scores:\n", mean_scores)
 
 
 score_mat = np.empty([iter, len(range(15,25))], dtype=float)
-print("\nClustering Molecular Function")
+print("\nSpectral Clustering Molecular Function")
 for i in range(iter):
         for k in range(15,25):
-		print("k=",k)
-                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
-                k_means.fit(X_mf)
-                cluster_labels = k_means.labels_
-                score = metrics.silhouette_score(X_mf, cluster_labels, metric='euclidean')
+                spectral = cluster.SpectralClustering(n_clusters=k, eigen_solver='arpack', affinity='cosine')
+                spectral.fit(X_mf)
+                cluster_labels = spectral.labels_
+                score = metrics.silhouette_score(X_mf, cluster_labels, metric='cosine')
                 score_mat[i,k-15] = score
 
 

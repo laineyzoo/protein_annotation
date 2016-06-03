@@ -151,13 +151,12 @@ def get_direct_descendants(go_term):
 
 
 ## randomize the ordering of the dataset ##
-def shuffle_data(labels, abstracts, pmids_dataset):
+def shuffle_data(labels, abstracts):
     
     print("Shuffle dataset")
     
     labels_shuffle = []
     abstracts_shuffle = []
-    pmids_shuffle = []
     
     index_shuffle = np.arange(len(labels))
     np.random.shuffle(index_shuffle)
@@ -165,9 +164,8 @@ def shuffle_data(labels, abstracts, pmids_dataset):
     for i in index_shuffle:
         labels_shuffle.append(labels[i])
         abstracts_shuffle.append(abstracts[i])
-        pmids_shuffle.append(pmids_dataset[i])
     
-    return (labels_shuffle, abstracts_shuffle, pmids_shuffle)
+    return (labels_shuffle, abstracts_shuffle)
 
 
 
@@ -395,12 +393,16 @@ reader = csv.reader(file2)
 data2 = np.array(list(reader))
 
 proteins_cc = list(set(data_cc[:,0]))
+go_terms_cc = list(set(data_cc[:,1]))
 pmids_cc = list(set(data_cc[:,2]))
 
 proteins_bp = list(set(data_bp[:,0]))
+go_terms_bp = list(set(data_bp[:,1]))
 pmids_bp = list(set(data_bp[:,2]))
 
+
 proteins_mf = list(set(data_mf[:,0]))
+go_terms_mf = list(set(data_mf[:,1]))
 pmids_mf = list(set(data_mf[:,2]))
 
 file1.close()
@@ -416,11 +418,11 @@ print("Cell components: ", len(cell_components))
 for cell_comp in cell_components:
     descendant_dict_cc[cell_comp] = get_descendants(GO_CELL_COMPONENTS[cell_comp])
 
-#descendant_dict_bp = {}
-#biological_process = sorted(list(GO_BIOLOGICAL_PROCESS.keys()))
-#print("Biological process: ", len(biological_process))
-#for bio_process in biological_process:
-#    descendant_dict_bp[bio_process] = get_descendants(GO_BIOLOGICAL_PROCESS[bio_process])
+descendant_dict_bp = {}
+biological_process = sorted(list(GO_BIOLOGICAL_PROCESS.keys()))
+print("Biological process: ", len(biological_process))
+for bio_process in biological_process:
+    descendant_dict_bp[bio_process] = get_descendants(GO_BIOLOGICAL_PROCESS[bio_process])
 
 descendant_dict_mf = {}
 molecular_function = sorted(list(GO_MOLECULAR_FUNCTION.keys()))
@@ -437,80 +439,75 @@ print("Getting abstracts")
 print("\nCellular Components")
 labels_cc = list()
 abstracts_cc = list()
-pmids_dataset_cc = list() #every datapoint will have an associated pubmed id in this list
 
-for pmid in pmids_cc:
+for term in go_terms_cc:
+	matching_records = data_cc[data_cc[:,1]==term]
+	matching_pmids = list(set(matching_records[:,2]))
+	
+	text = ""
+	for pmid in matching_pmids:
+		matching_pub = data2[data2[:,1]==pmid]
+		text += matching_pub[0][4]
+	text = text_preprocessing(text)
 
-    matching_proteins = data_cc[data_cc[:,2]==pmid]
-    go_terms = list(set(matching_proteins[:,1]))
-    matching_pub = data2[data2[:,1]==pmid]
-    text = matching_pub[0][4]
-    text = text_preprocessing(text)
-    
-    for term in go_terms:
-        for i in range(len(cell_components)):
-            if term in descendant_dict_cc[cell_components[i]]:
-                labels_cc.append(i)
-                abstracts_cc.append(text)
-                pmids_dataset_cc.append(pmid)
-    
+	for i in range(len(cell_components)):
+		if term in descendant_dict_cc[cell_components[i]]:
+			labels_cc.append(i)
+			abstracts_cc.append(text)
 
 
-(labels_cc, abstracts_cc, pmids_dataset_cc) = shuffle_data(labels_cc, abstracts_cc, pmids_dataset_cc)
+(labels_cc, abstracts_cc) = shuffle_data(labels_cc, abstracts_cc)
 
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 X_cc = vectorizer.fit_transform(abstracts_cc)
 
-#print("\nBiological process")
+print("\nBiological process")
 
-#labels_bp = list()
-#abstracts_bp = list()
-#pmids_dataset_bp = list() #every datapoint will have an associated pubmed id in this list
+labels_bp = list()
+abstracts_bp = list()
 
-#for pmid in pmids_bp:
+for term in go_terms_bp:
+	matching_records = data_bp[data_bp[:,1]==term]
+	matching_pmids = list(set(matching_records[:,2]))
+	
+	text = ""
+	for pmid in matching_pmids:
+		matching_pub = data2[data2[:,1]==pmid]
+		text += matching_pub[0][4]
+	text = text_preprocessing(text)
 
-#    matching_proteins = data_bp[data_bp[:,2]==pmid]
-#    go_terms = list(set(matching_proteins[:,1]))
-#    matching_pub = data2[data2[:,1]==pmid]
-#    text = matching_pub[0][4]
-#    text = text_preprocessing(text)
+	for i in range(len(biological_process)):
+		if term in descendant_dict_bp[biological_process[i]]:
+			labels_bp.append(i)
+			abstracts_bp.append(text)
 
-#    for term in go_terms:
-#        for i in range(len(biological_process)):
-#            if term in descendant_dict_bp[biological_process[i]]:
-#                labels_bp.append(i)
-#                abstracts_bp.append(text)
-#                pmids_dataset_bp.append(pmid)
+(labels_bp, abstracts_bp) = shuffle_data(labels_bp, abstracts_bp)
 
-#(labels_bp, abstracts_bp, pmids_dataset_bp) = shuffle_data(labels_bp, abstracts_bp, pmids_dataset_bp)
+vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+X_bp = vectorizer.fit_transform(abstracts_bp)
 
-#vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
-#X_bp = vectorizer.fit_transform(abstracts_bp)
 
 print("\nMolecular function")
 
 labels_mf = list()
 abstracts_mf = list()
-pmids_dataset_mf = list() #every datapoint will have an associated pubmed id in this list
 
-for pmid in pmids_mf:
+for term in go_terms_mf:
+	matching_records = data_mf[data_mf[:,1]==term]
+	matching_pmids = list(set(matching_records[:,2]))
+	
+	text = ""
+	for pmid in matching_pmids:
+		matching_pub = data2[data2[:,1]==pmid]
+		text += matching_pub[0][4]
+	text = text_preprocessing(text)
 
-    matching_proteins = data_mf[data_mf[:,2]==pmid]
-    go_terms = list(set(matching_proteins[:,1]))
-    matching_pub = data2[data2[:,1]==pmid]
-    text = matching_pub[0][4]
-    text = text_preprocessing(text)
+	for i in range(len(molecular_function)):
+		if term in descendant_dict_mf[molecular_function[i]]:
+			labels_mf.append(i)
+			abstracts_mf.append(text)
 
-    for term in go_terms:
-        for i in range(len(molecular_function)):
-            if term in descendant_dict_mf[molecular_function[i]]:
-                labels_mf.append(i)
-                abstracts_mf.append(text)
-                pmids_dataset_mf.append(pmid)
-
-
-
-(labels_mf, abstracts_mf, pmids_dataset_mf) = shuffle_data(labels_mf, abstracts_mf, pmids_dataset_mf)
+(labels_mf, abstracts_mf) = shuffle_data(labels_mf, abstracts_mf)
 
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 X_mf = vectorizer.fit_transform(abstracts_mf)
@@ -521,7 +518,6 @@ score_mat = np.empty([iter, len(range(10,21))], dtype=float)
 print("\nClustering Cellular Components")
 for i in range(iter):
 	for k in range(10,21):
-		print("k=", k)
    		k_means = cluster.KMeans(n_clusters=k, init="k-means++")
     		k_means.fit(X_cc)
     		cluster_labels = k_means.labels_
@@ -533,19 +529,19 @@ mean_scores = score_mat.mean(axis=0)
 print("Mean scores:\n", mean_scores)
 
 
-#score_mat = np.empty([iter, len(range(20,30))], dtype=float)
-#print("\nClustering Biological Processes")
-#for i in range(iter):
-#        for k in range(20,30):
-#                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
-#                k_means.fit(X_bp)
-#                cluster_labels = k_means.labels_
-#                score = metrics.silhouette_score(X_bp, cluster_labels, metric='cosine')
-#                score_mat[i,k-20] = score
+score_mat = np.empty([iter, len(range(20,30))], dtype=float)
+print("\nClustering Biological Processes")
+for i in range(iter):
+        for k in range(20,30):
+                k_means = cluster.KMeans(n_clusters=k, init="k-means++")
+                k_means.fit(X_bp)
+                cluster_labels = k_means.labels_
+                score = metrics.silhouette_score(X_bp, cluster_labels, metric='cosine')
+                score_mat[i,k-20] = score
 
 
-#mean_scores = score_mat.mean(axis=0)
-#print("Mean scores:\n", mean_scores)
+mean_scores = score_mat.mean(axis=0)
+print("Mean scores:\n", mean_scores)
 
 
 
@@ -553,11 +549,10 @@ score_mat = np.empty([iter, len(range(15,25))], dtype=float)
 print("\nClustering Molecular Function")
 for i in range(iter):
         for k in range(15,25):
-		print("k=",k)
                 k_means = cluster.KMeans(n_clusters=k, init="k-means++")
                 k_means.fit(X_mf)
                 cluster_labels = k_means.labels_
-                score = metrics.silhouette_score(X_mf, cluster_labels, metric='euclidean')
+                score = metrics.silhouette_score(X_mf, cluster_labels, metric='cosine')
                 score_mat[i,k-15] = score
 
 
