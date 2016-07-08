@@ -8,6 +8,7 @@ import collections
 import json
 import string
 import re
+import pickle
 from time import time
 
 from nltk.corpus import stopwords
@@ -21,7 +22,6 @@ from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn import linear_model
 from sklearn import metrics
 from sklearn import svm
-import pickle
 
 ##CONNECT TO DB
 #import sqlite3
@@ -132,6 +132,46 @@ def text_preprocessing(text):
     return text
 
 
+def softmax(x):
+	return np.exp(x) / np.sum(np.exp(x), axis=0)
+
+
+#compute the softmax score for each child of the given parent
+def compute_softmax_scores(parent, test_point):
+	print("Compute softmax scores for children of ", parent)
+	direct_children = get_direct_descendants(parent)
+	descendant_dict = {}
+	for child in direct_children:
+		descendant_dict[child] = get_descendants(child)
+	probabilities = list()
+	for child in direct_children:
+		y_train = list()
+		for term in go_terms_train:
+			if term in descendant_dict[child]:
+				y_train.append(1)
+			else:
+				y_train.append(0)
+		##train classifier for this node
+		node_count+=1
+		print("Node count: ", node_count)
+		print("train MNB classifier for node ", child)
+		classifier = MultinomialNB(alpha=.01).fit(X_train, y_train)
+		##get the probability of success
+		probabilities.append(classifier.predict_proba(test_point)[0,1])
+	softmax_scores = softmax(probabilities)
+	ontology_scores[parent] = softmax_scores
+
+
+def traverse_ontology(parent, test_point):
+	print("Traverse ontology from ", parent)
+	children = get_direct_descendants(parent)
+	if len(children)>0:
+		compute_softmax_scores(parent, test_point)
+		for child in children:
+			traverse_ontology(child, test_point)
+	else:
+		leaf_count+=1
+
 
 #########################################################################################
 
@@ -140,79 +180,88 @@ print("\nSTART\n")
 file1 = open("protein_records.csv","r")
 reader = csv.reader(file1)
 data = np.array(list(reader))
-data = data[data[:,4]=="C"]
+data_cc = data[data[:,4]=="C"]
 
 file2 = open("pubmed_records.csv","r")
 reader = csv.reader(file2)
 data2 = np.array(list(reader))
 
-proteins = list(set(data[:,0]))
-pmids = list(set(data[:,2]))
+proteins_cc = list(set(data_cc[:,0]))
+pmids_cc = list(set(data_cc[:,2]))
 
 file1.close()
-file2.close()
 
-abstracts = list()
-go_terms = list()
+abstracts_cc = list()
+go_terms_cc = list()
 pmids_dataset = list()
 
-for pmid in pmids:
+for pmid in pmids_cc:
 	matching_pub = data2[data2[:,1]==pmid]
-	matching_proteins = data[data[:,2]==pmid]
+	matching_proteins = data_cc[data_cc[:,2]==pmid]
 	text = matching_pub[0][4]
 	text = text_preprocessing(text)
-	go_terms_protein = list(set(matching_proteins[:,1]))
-	for term in go_terms_protein:
-		abstracts.append(text)
-		go_terms.append(term)
+	go_terms = list(set(matching_proteins[:,1]))
+	for term in go_terms:
+		abstracts_cc.append(text)
+		go_terms_cc.append(term)
 		pmids_dataset.append(pmid)
 
 #shuffle dataset
-(abstracts, go_terms, pmids_dataset) = shuffle_data(abstracts, go_terms, pmids_dataset)
+(abstracts_cc, go_terms_cc, pmids_dataset) = shuffle_data(abstracts_cc, go_terms_cc, pmids_dataset)
 
 #divide dataset
-index = int(len(pmids)/5)*4
+index = int(len(pmids_cc)/5)*4
 
-X_train = abstracts[:index]
-go_terms_train = go_terms[:index]
-pmids_train = pmids_dataset[:index]
+X_train = abstracts_cc[:index]
+go_terms_train = go_terms_cc[:index]
+pmids_train = pmids_cc[:index]
 
-X_test = abstracts[index:]
-go_terms_test = go_terms[index:]
-pmids_test = pmids_dataset[index:]
+X_test = abstracts_cc[index:]
+go_terms_test = go_terms_cc[index:]
+pmids_test = pmids_cc[index:]
 
 #create vectorizer
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 X_train = vectorizer.fit_transform(X_train)
 X_test = vectorizer.transform(X_test)
 
+#open files
 GO_JSON = "go.json"
 f = open(GO_JSON)
-data = json.load(f)
+go_ontology = json.load(f)
 
-node_count = 0
-nodes_seen = list()
-classifier_dict = {}
-for node in data:
-	go_id = node['id']
-	namespace = node['namespace']
-	if go_id not in nodes_seen and namespace == 'cellular_component':
-		node_count+=1
-		nodes_seen.append(go_id)
-		print("Node count: ", node_count)
-		print("GO term: ", go_id)
-		descendants = get_descendants(go_id)
-		y_train = list()
-		for term in go_terms_train:
-			if term in descendants:
-				y_train.append(1)
-			else:
-				y_train.append(0)
-		classifier = MultinomialNB(alpha=.01).fit(X_train, y_train)
-		classifier_dict[go_id] = classifier
+classifiers_file = open("classifiers_output.txt", "rb")
+classifiers = pickle.load(classifiers_file)
 
-
-output = open("classifiers_output.txt", "ab+")
-pickle.dump(classifier_dict, output)
-output.close()
+#run all classifiers for each test point
+test_count = 0
+for i in range(3,len(go_terms_test)):
+	test_point = X_test[i]
+	test_count+=1
+	print("Test count: ", test_count)
+	print("Test point: ", pmids_test[i])
+	nodes_seen = list()
+	node_count = 0
+	leaf_count = 0
+	ontology_scores = {}
+	for node in go_ontology:
+		go_id = node['id']
+		namespace = node['namespace']
+		if go_id not in nodes_seen and namespace == 'cellular_component':
+			node_count+=1
+			nodes_seen.append(go_id)
+			print("Node count: ", node_count)
+			print("GO id: ", go_id)
+			children = get_direct_descendants(go_id)
+			scores = list()
+			for child in children:
+				clf = classifiers[child]
+				prob = clf.predict_proba(test_point)[0,1]
+				scores.append(prob)
+			softmax_scores = softmax(scores)
+			ontology_scores[go_id] = softmax_scores
+	test = open(pmids_test[i]+".txt", "ab+")
+	pickle.dump(ontology_scores, test)
+	test.close()
+	
 
