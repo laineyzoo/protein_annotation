@@ -117,6 +117,34 @@ def shuffle_data(abstracts, go_terms, pmids):
 	return (abstracts_shuffle, go_terms_shuffle, pmids_shuffle)
 
 
+# remove duplicate papers/proteins appearing in both train and test
+def remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, ont):
+	print("Remove duplicates")
+	# papers in the train set should not be in the test set
+	delete_indexes = list()
+	for test_point in pmids_test:
+		#check if this paper from the test set appears in the train set
+		if test_point in pmids_train:
+			indexes = list(np.where(pmids_test==test_point)[0])
+			delete_indexes.extend(indexes)
+	for protein in proteins:
+		#get the pubmed ids of papers associated with this protein
+		matching_records = data[data[:,0]==protein]
+		matching_pmids = list(set(matching_records[:,2]))
+		for pmid in matching_pmids:
+			if pmid in pmids_train and pmid in pmids_test:
+				indexes = list(np.where(pmids_test==pmid)[0])
+				delete_indexes.extend(indexes)
+	#delete the datapoints from the test set meeting the above two conditions
+	delete_indexes = list(set(delete_indexes))
+	for loc in sorted(delete_indexes, reverse=True):
+		del X_test[loc]
+		del go_terms_test[loc]
+		del pmids_test[loc]
+	return X_test, go_terms_test, pmids_test
+
+
+
 def text_preprocessing(text):
     #lowercase everything
     text = text.lower()
@@ -128,10 +156,37 @@ def text_preprocessing(text):
     text = " ".join(no_stopwords)
     #stem the words
     stemmer = PorterStemmer()
-    text = " ".join( [ stemmer.stem(w) for w in text.split() ] )
+    text = " ".join([stemmer.stem(w) for w in text.split()])
     return text
 
 
+def softmax(x):
+	return np.exp(x) / np.sum(np.exp(x), axis=0)
+
+def get_bin(num, prob):
+	start = 0.0
+	end = prob[0]
+	for i in range(len(prob)):
+		if num >= start and num < end:
+			return i
+		else:
+			start = end
+			end = end+prob[i+1]
+
+def traverse_ontology(parent):
+	print("Traverse ontology from ", parent)
+	if parent in ontology_scores.keys():
+		current_score = ontology_scores[parent]
+		ontology_scores[parent] = current_score+1
+	else:
+		ontology_scores[parent] = 1
+	children = get_direct_descendants(parent)
+	if len(children)>0:
+		random_num = npr.rand()
+		probabilities = ontology_prob[parent]
+		bin = get_bin(number, probabilities)
+		selected_node = children[bin]
+		traverse_ontology(selected_node)
 
 #########################################################################################
 
@@ -171,7 +226,7 @@ for pmid in pmids:
 (abstracts, go_terms, pmids_dataset) = shuffle_data(abstracts, go_terms, pmids_dataset)
 
 #divide dataset
-index = int(len(pmids)/5)*4
+index = int(len(abstracts)/5)*4
 
 X_train = abstracts[:index]
 go_terms_train = go_terms[:index]
@@ -181,19 +236,23 @@ X_test = abstracts[index:]
 go_terms_test = go_terms[index:]
 pmids_test = pmids_dataset[index:]
 
-#create vectorizer
+remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, "C")
+
+#vectorize features
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 X_train = vectorizer.fit_transform(X_train)
 X_test = vectorizer.transform(X_test)
 
+#create binary classifiers
 GO_JSON = "go.json"
 f = open(GO_JSON)
-data = json.load(f)
+go_ontology = json.load(f)
+f.close()
 
 node_count = 0
 nodes_seen = list()
 classifier_dict = {}
-for node in data:
+for node in go_ontology:
 	go_id = node['id']
 	namespace = node['namespace']
 	if go_id not in nodes_seen and namespace == 'cellular_component':
@@ -212,7 +271,51 @@ for node in data:
 		classifier_dict[go_id] = classifier
 
 
-output = open("classifiers_output.txt", "ab+")
+output = open("classifiers_file.txt", "ab+")
 pickle.dump(classifier_dict, output)
 output.close()
+
+
+#run binary classifiers on the test set
+classifiers_file = open("classifiers_file.txt", "rb")
+classifiers = pickle.load(classifiers_file)
+classifiers_file.close()
+
+test_count = 0
+for i in range(len(X_test)):
+	test_point = X_test[i]
+	test_count+=1
+	print("Test count: ", test_count)
+	nodes_seen = list()
+	node_count = 0
+	leaf_count = 0
+	ontology_prob = {}
+	for node in go_ontology:
+		go_id = node['id']
+		namespace = node['namespace']
+		if go_id not in nodes_seen and namespace == 'cellular_component':
+			node_count+=1
+			nodes_seen.append(go_id)
+			print("Node count: ", node_count)
+			print("GO id: ", go_id)
+			children = get_direct_descendants(go_id)
+			scores = list()
+			for child in children:
+				clf = classifiers[child]
+				prob = clf.predict_proba(test_point)[0,1]
+				scores.append(prob)
+			softmax_scores = softmax(scores)
+			ontology_prob[go_id] = softmax_scores
+	#traverse the ontology n times
+	ontology_scores = {}
+	n = 1000
+	for j in range(n):
+		root = GO_ONTOLOGIES["CELLULAR_COMPONENT"]
+		traverse_ontology(root)
+	#save traversal scores for each test point
+	outfile = open(pmids_test[i]+".txt", "ab+")
+	pickle.dump(ontology_scores, outfile)
+	outfile.close()
+
+
 
