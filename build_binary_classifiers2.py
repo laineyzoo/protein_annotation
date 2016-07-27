@@ -169,8 +169,32 @@ def softmax(x):
 	return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 
+#BFS traversal
+def traverse_ontology_bfs(parent):
+	print("Traverse ontology from ", parent)
+	children = get_direct_descendants(parent)
+	#special case for the root's children
+	if parent in GO_ONTOLOGIES.values():
+		softmax_scores = ontology_softmax[parent]
+		for i in range(len(children)):
+			ontology_probabilities[children[i]] = softmax_scores[i]
+		for i in range(len(children)):
+			traverse_ontology(children[i])
+	#all other nodes
+	elif len(children) > 0:
+		softmax_scores = ontology_softmax[parent]
+		for i in range(len(children)):
+			final_prob = ontology_probabilities[parent] * softmax_scores[i]
+			if children[i] in ontology_probabilities.keys():
+				ontology_probabilities[children[i]] = ontology_probabilities[children[i]] + final_prob
+			else:
+				ontology_probabilities[children[i]] = final_prob
+		for i in range(len(children)):
+			traverse_ontology(children[i])
 
-def traverse_ontology(parent):
+
+#DFS traversal
+def traverse_ontology_dfs(parent):
 	print("Traverse ontology from ", parent)
 	children = get_direct_descendants(parent)
 	#special case for the root's children
@@ -213,7 +237,7 @@ def compute_ontology_probabilities(test_point):
 	#calculate final probabilities for the whole ontology
 	root = GO_ONTOLOGIES["CELLULAR_COMPONENT"]
 	ontology_probabilities = {}
-	traverse_ontology(root)
+	traverse_ontology_bfs(root)
 	#save probabilities for each test point
 	outfile = open(pmids_test[i]+".txt", "ab+")
 	pickle.dump(ontology_probabilities, outfile)
