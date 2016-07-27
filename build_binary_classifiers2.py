@@ -172,14 +172,15 @@ def softmax(x):
 #BFS traversal
 def traverse_ontology_bfs(parent):
 	print("Traverse ontology from ", parent)
+	global ontology_probabilities
 	children = get_direct_descendants(parent)
 	#special case for the root's children
 	if parent in GO_ONTOLOGIES.values():
 		softmax_scores = ontology_softmax[parent]
 		for i in range(len(children)):
 			ontology_probabilities[children[i]] = softmax_scores[i]
-		for i in range(len(children)):
-			traverse_ontology(children[i])
+		#parallelize this job
+		Parallel(n_jobs=10)(delayed(traverse_ontology_bfs)(child) for child in children)
 	#all other nodes
 	elif len(children) > 0:
 		softmax_scores = ontology_softmax[parent]
@@ -189,20 +190,21 @@ def traverse_ontology_bfs(parent):
 				ontology_probabilities[children[i]] = ontology_probabilities[children[i]] + final_prob
 			else:
 				ontology_probabilities[children[i]] = final_prob
-		for i in range(len(children)):
-			traverse_ontology(children[i])
+		#parallelize this job
+		Parallel(n_jobs=10)(delayed(traverse_ontology_bfs)(child) for child in children)
 
 
 #DFS traversal
 def traverse_ontology_dfs(parent):
 	print("Traverse ontology from ", parent)
+	global ontology_probabilities
 	children = get_direct_descendants(parent)
 	#special case for the root's children
 	if parent in GO_ONTOLOGIES.values():
 		softmax_scores = ontology_softmax[parent]
 		for i in range(len(children)):
 			ontology_probabilities[children[i]] = softmax_scores[i]
-			traverse_ontology(children[i])
+			traverse_ontology_dfs(children[i])
 	#all other nodes
 	elif len(children) > 0:
 		softmax_scores = ontology_softmax[parent]
@@ -212,11 +214,12 @@ def traverse_ontology_dfs(parent):
 				ontology_probabilities[children[i]] = ontology_probabilities[children[i]] + final_prob
 			else:
 				ontology_probabilities[children[i]] = final_prob
-			traverse_ontology(children[i])
+			traverse_ontology_dfs(children[i])
 
 
 def compute_ontology_probabilities(test_point):
 	nodes_seen = list()
+	global ontology_softmax
 	ontology_softmax = {}
 	node_count = 0
 	for node in go_ontology:
@@ -236,6 +239,7 @@ def compute_ontology_probabilities(test_point):
 			ontology_softmax[go_id] = softmax_scores
 	#calculate final probabilities for the whole ontology
 	root = GO_ONTOLOGIES["CELLULAR_COMPONENT"]
+	global ontology_probabilities
 	ontology_probabilities = {}
 	traverse_ontology_bfs(root)
 	#save probabilities for each test point
@@ -307,7 +311,7 @@ f.close()
 
 node_count = 0
 nodes_seen = list()
-classifier_dict = {}
+classifiers = {}
 for node in go_ontology:
 	go_id = node['id']
 	namespace = node['namespace']
@@ -323,26 +327,17 @@ for node in go_ontology:
 				y_train.append(1)
 			else:
 				y_train.append(0)
-		classifier = MultinomialNB(alpha=.01).fit(X_train, y_train)
-		classifier_dict[go_id] = classifier
-
-
-output = open("classifiers_file.txt", "ab+")
-pickle.dump(classifier_dict, output)
-output.close()
-
+		clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
+		classifiers[go_id] = clf
+print("Done creating classifiers!")
 
 #run binary classifiers on the test set
-classifiers_file = open("classifiers_file.txt", "rb")
-classifiers = pickle.load(classifiers_file)
-classifiers_file.close()
-
+print("Compute final probabilities for each test point")
 ontology_softmax = {}
 ontology_probabilities = {}
 
-#parallelize this job
-n_cores = 10 #multiprocessing.cpu_count() #get the no. of cores of this machine
-Parallel(n_jobs=n_cores)(delayed(compute_ontology_probabilities)(test_point) for test_point in X_test)
+for test_point in X_test:
+	compute_ontology_probabilities(test_point)
 
 
 
