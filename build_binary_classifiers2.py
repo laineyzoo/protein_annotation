@@ -125,12 +125,14 @@ def shuffle_data(abstracts, go_terms, pmids):
 # remove duplicate papers/proteins appearing in both train and test
 def remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, ont):
 	print("Remove duplicates")
+	pmids_test_array = np.array(pmids_test)
 	# papers in the train set should not be in the test set
 	delete_indexes = list()
 	for test_point in pmids_test:
 		#check if this paper from the test set appears in the train set
 		if test_point in pmids_train:
-			indexes = list(np.where(pmids_test==test_point)[0])
+			#print("Test paper appears in train set")
+			indexes = list(np.where(pmids_test_array==test_point)[0])
 			delete_indexes.extend(indexes)
 	for protein in proteins:
 		#get the pubmed ids of papers associated with this protein
@@ -138,10 +140,11 @@ def remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, ont)
 		matching_pmids = list(set(matching_records[:,2]))
 		for pmid in matching_pmids:
 			if pmid in pmids_train and pmid in pmids_test:
-				indexes = list(np.where(pmids_test==pmid)[0])
+				indexes = list(np.where(pmids_test_array==pmid)[0])
 				delete_indexes.extend(indexes)
 	#delete the datapoints from the test set meeting the above two conditions
 	delete_indexes = list(set(delete_indexes))
+	print("Papers to delete: ", len(delete_indexes))
 	for loc in sorted(delete_indexes, reverse=True):
 		del X_test[loc]
 		del go_terms_test[loc]
@@ -169,7 +172,7 @@ def softmax(x):
 	return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 
-#BFS traversal
+#BFS traversal - recursive
 def traverse_ontology_bfs(parent):
 	print("Traverse ontology from ", parent)
 	global ontology_probabilities
@@ -179,8 +182,8 @@ def traverse_ontology_bfs(parent):
 		softmax_scores = ontology_softmax[parent]
 		for i in range(len(children)):
 			ontology_probabilities[children[i]] = softmax_scores[i]
-		#parallelize this job
-		Parallel(n_jobs=10)(delayed(traverse_ontology_bfs)(child) for child in children)
+		for child in children:
+			traverse_ontology_bfs(child)
 	#all other nodes
 	elif len(children) > 0:
 		softmax_scores = ontology_softmax[parent]
@@ -190,8 +193,33 @@ def traverse_ontology_bfs(parent):
 				ontology_probabilities[children[i]] = ontology_probabilities[children[i]] + final_prob
 			else:
 				ontology_probabilities[children[i]] = final_prob
-		#parallelize this job
-		Parallel(n_jobs=10)(delayed(traverse_ontology_bfs)(child) for child in children)
+		for child in children:
+			traverse_ontology_bfs(child)
+
+
+#BFS traversal - iterative (non-recursive)
+def traverse_ontology_bfs_iterative(root):
+	global ontology_probabilities
+	q = collections.deque()
+	q.append(root)
+	while len(q)>0:
+		parent = q.popleft()
+		print("Parent: ", parent)
+		children = get_direct_descendants(parent)
+		softmax_scores = ontology_softmax[parent]
+		if parent==root:
+			for i in range(len(children)):
+				ontology_probabilities[children[i]] = softmax_scores[i]
+				q.append(children[i])
+		else:
+			for i in range(len(children)):
+				final_prob = ontology_probabilities[parent] * softmax_scores[i]
+				print("final_prob =", final_prob)
+				if children[i] in ontology_probabilities.keys():
+					ontology_probabilities[children[i]] = ontology_probabilities[children[i]] + final_prob
+				else:
+					ontology_probabilities[children[i]] = final_prob
+				q.append(children[i])
 
 
 #DFS traversal
@@ -217,11 +245,12 @@ def traverse_ontology_dfs(parent):
 			traverse_ontology_dfs(children[i])
 
 
-def compute_ontology_probabilities(test_point):
+def compute_ontology_probabilities(test_point, pmid):
 	nodes_seen = list()
 	global ontology_softmax
 	ontology_softmax = {}
 	node_count = 0
+	#calculate softmax scores for each node
 	for node in go_ontology:
 		go_id = node['id']
 		namespace = node['namespace']
@@ -241,11 +270,33 @@ def compute_ontology_probabilities(test_point):
 	root = GO_ONTOLOGIES["CELLULAR_COMPONENT"]
 	global ontology_probabilities
 	ontology_probabilities = {}
-	traverse_ontology_bfs(root)
+	traverse_ontology_bfs_iterative(root)
 	#save probabilities for each test point
-	outfile = open(pmids_test[i]+".txt", "ab+")
+	outfile = open(pmid+"_2.txt", "ab+")
 	pickle.dump(ontology_probabilities, outfile)
 	outfile.close()
+
+
+def create_binary_classifier_for_node(node):
+	global node_count
+	global nodes_seen
+	global classifiers
+	go_id = node['id']
+	namespace = node['namespace']
+	if go_id not in nodes_seen and namespace == 'cellular_component':
+		node_count+=1
+		nodes_seen.append(go_id)
+		print("Node count: ", node_count)
+		print("GO term: ", go_id)
+		descendants = get_descendants(go_id)
+		y_train = list()
+		for term in go_terms_train:
+			if term in descendants:
+				y_train.append(1)
+			else:
+				y_train.append(0)
+		clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
+		classifiers[go_id] = clf
 
 
 #######################################################################################
@@ -296,7 +347,15 @@ X_test = abstracts[index:]
 go_terms_test = go_terms[index:]
 pmids_test = pmids_dataset[index:]
 
-remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, "C")
+(X_test, go_terms_test, pmids_test) = remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, "C")
+
+#write test set to file
+f = open("pmids_test.txt","ab+")
+pickle.dump(pmids_test, f)
+f.close()
+f = open("go_terms_test.txt", "ab+")
+pickle.dump(go_terms_test, f)
+f.close()
 
 #vectorize features
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
@@ -304,6 +363,7 @@ X_train = vectorizer.fit_transform(X_train)
 X_test = vectorizer.transform(X_test)
 
 #create binary classifiers
+print("Create binary classifiers")
 GO_JSON = "go.json"
 f = open(GO_JSON)
 go_ontology = json.load(f)
@@ -312,32 +372,17 @@ f.close()
 node_count = 0
 nodes_seen = list()
 classifiers = {}
-for node in go_ontology:
-	go_id = node['id']
-	namespace = node['namespace']
-	if go_id not in nodes_seen and namespace == 'cellular_component':
-		node_count+=1
-		nodes_seen.append(go_id)
-		print("Node count: ", node_count)
-		print("GO term: ", go_id)
-		descendants = get_descendants(go_id)
-		y_train = list()
-		for term in go_terms_train:
-			if term in descendants:
-				y_train.append(1)
-			else:
-				y_train.append(0)
-		clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
-		classifiers[go_id] = clf
-print("Done creating classifiers!")
+Parallel(n_jobs=10)(delayed(create_binary_classifier_for_node)(node) for node in go_ontology)
 
 #run binary classifiers on the test set
 print("Compute final probabilities for each test point")
 ontology_softmax = {}
 ontology_probabilities = {}
 
-for test_point in X_test:
-	compute_ontology_probabilities(test_point)
+for i in range(len(pmids_test)):
+	test_point = X_test[i]
+	pmid = pmids_test[i]
+	compute_ontology_probabilities(test_point,pmid)
 
 
 
