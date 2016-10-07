@@ -40,6 +40,7 @@ def create_kmers(sequence, k):
 	else:
 		return sequence
 
+#check if all elements of an array are equal
 def array_equal(arr):
 	return all(np.isclose(x, arr[0]) for x in arr)
 
@@ -59,13 +60,21 @@ def path_to_root(rank, taxonomy):
 	return (dist-1)
 
 
+#return LCA of a list of nodes
 def get_lca(node_list, taxonomy):
+	if len(node_list)==0:
+		return ""
+	elif len(node_list)==1:
+		return node_list[0]
 	paths = list()
 	[paths.append(propagate_labels([node], taxonomy)) for node in node_list]
 	intersect = list()
 	path0 = paths[0]
-	for i in range(1, len(paths)):
-		intersect = list(set(path0) & set(paths[i]))
+	path1 = paths[1]
+	intersect = list(set(path0) & set(paths1))
+	if len(node_list)>2:
+		for i in range(2, len(paths)):
+			intersect = list(set(intersect) & set(paths[i]))
 	intersect_len = [path_to_root(inter, taxonomy) for inter in intersect]
 	lca = intersect[intersect_len.index(max(intersect_len))]
 	return lca
@@ -95,18 +104,6 @@ def filter_prediction(pred_labels, idx):
 				error_type = 3
 				if array_equal(lowest_labels_prob):
 					pred = filter_prediction(lowest_labels, idx)
-#					lowest_pred_len-=1
-#					lowest_labels = list()
-#					lowest_labels_prob = list()
-#					for i in range(len(path_len)):
-#						if path_len[i]==lowest_pred_len:
-#							lowest_labels.append(pred[i])
-#							lowest_labels_prob.append(prob_ont[pred[i]])
-#					if array_equal(lowest_labels_prob):
-#						pred = get_lca(lowest_labels[0], lowest_labels[1], taxonomy)
-#					else:
-#						highest_prob_label = lowest_labels[lowest_labels_prob.index(max(lowest_labels_prob))]
-#						pred = propagate_labels([highest_prob_label], taxonomy)
 				else:
 					highest_prob_label = lowest_labels[lowest_labels_prob.index(max(lowest_labels_prob))]
 					pred = propagate_labels([highest_prob_label], taxonomy)
@@ -446,7 +443,7 @@ for i in range(len(sequence_ids_test)):
 	pred_labels.append(pos_labels)
 
 
-for i in range(70,80):
+for i in range(80,90):
 	if len(set(pred_labels[i])-set(true_labels[i]))>0:
 		print("\n", i)
 		print("True Labels:", len(true_labels[i]))
@@ -563,3 +560,28 @@ for k in silva_keys:
 	if species in environ:
 		del silva_dict[k]
 
+tax_keys = taxonomy.keys()
+silva_keys = silva_dict.keys()
+not_leaf = 0
+for k in silva_keys:
+	species = silva_dict[k]["class"][-1]
+	if species not in tax_keys:
+		del silva_dict[k]
+	elif len(taxonomy[species]["children"])>0:
+		print("Not a leaf, delete sample")
+		not_leaf+=1
+		del silva_dict[k]
+
+
+tax_keys = rdp_taxonomy.keys()
+rdp_keys = rdp_dict.keys()
+not_leaf = 0
+for k in rdp_keys:
+	genus = rdp_dict[k]["class"][-1]
+	if genus not in tax_keys:
+		print("Genus not in taxonomy")
+		del rdp_dict[k]
+	elif len(rdp_taxonomy[genus]["children"])>0:
+		print("Not a leaf, delete sample")
+		not_leaf+=1
+		del rdp_dict[k]
