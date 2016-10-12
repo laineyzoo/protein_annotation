@@ -183,7 +183,7 @@ def predict_go(test_point):
 		prob = clf.predict_proba(test_point)[0]
 		classes = clf.classes_
 		if len(classes)==2:
-			positive_prob = prob[classes[:]==1]
+			positive_prob = prob[classes[:]==1][0]
 		else:
 			if classes[0]==0:
 				positive_prob = 0.0
@@ -201,6 +201,7 @@ if __name__ == "__main__":
 		print("This script requires at least 4 arguments: ontology, dataset, classifier, sample_threshold")
 		exit()
 	else:
+		print("=====START=====")
 		print("\nSettings:")
 		ont = sys.argv[1]
 		namespace = "cellular_component"
@@ -208,7 +209,7 @@ if __name__ == "__main__":
 			namespace = "molecular_function"
 		elif ont == "P":
 			namespace = "biological_process"
-		print("Ontology: ", namespace)
+		print("Ontology:", namespace)
 
 		dataset = sys.argv[2]
 		if dataset=="U":
@@ -217,10 +218,10 @@ if __name__ == "__main__":
 			print("Dataset: PubMed papers w/ GO names")
 		elif dataset=="P2":
 			print("Dataset: PubMed papers w/ gene names")
-		elif datase == "P3":
+		elif dataset=="P3": 
 			print("Dataset: PubMed papers w/ GO names - intersection w/ Uniprot")
 		elif dataset=="P4":
-			print("Dataset: PubMed papers w/ gene names - intersection w/ Uniprot")
+			print("Dataset: PubMed papers w/ gene names - intersection w/ Uniprot")		
 
 		algo = sys.argv[3]
 		if algo != "S":
@@ -229,8 +230,8 @@ if __name__ == "__main__":
 			print("Classifier: SVM")
 	
 
-		sample_threshold = int(sys.argv[4])
-		print("Sample threshold: ", sample_threshold)
+                sample_threshold = int(sys.argv[4])
+                print("Sample threshold: ", sample_threshold)
 	
 
 		time_start_all = time()
@@ -252,11 +253,11 @@ if __name__ == "__main__":
                 reader = csv.reader(f)
                 data2 = np.array(list(reader))
                 f.close()
-                pmids = list(set(data[:,2]))
+                uniprot_pmids = list(set(data[:,2]))
 
 		#dataset: UniProt abstracts
 		if dataset == "U":
-			for pmid in pmids:
+			for pmid in uniprot_pmids:
 				matching_pub = data2[data2[:,1]==pmid]
 				matching_proteins = data[data[:,2]==pmid]
 				text = matching_pub[0][4]
@@ -285,7 +286,6 @@ if __name__ == "__main__":
 			pubmed_papers_dict = json.load(f)
 			f.close()
 
-			uniprot_pmids = pmids
 			go_papers_keys = go_papers_dict.keys()
 			pubmed_papers_keys = pubmed_papers_dict.keys()
 			print("GO names w/ papers: ", len(go_papers_keys))
@@ -338,6 +338,7 @@ if __name__ == "__main__":
 			X_test = data_list[index:]
 			class_test = class_list[index:]
 			id_test = id_list[index:]
+			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
 		else:
 			#for pubmed data, take only 50% for training
 			index = int(len(data_list)/2)
@@ -373,9 +374,6 @@ if __name__ == "__main__":
 			#remove papers from the test set that also appears in the train set
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
 
-		if dataset == "U":
-			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
-		
 		#vectorize features
 		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 		X_train = vectorizer.fit_transform(X_train)
@@ -403,8 +401,7 @@ if __name__ == "__main__":
 					if algo != "S" or pos_count == len(y_train):
 						clf = MultinomialNB(alpha=1.0).fit(X_train, y_train)
 					else:
-						clf = svm.SVC(probability=True)
-						clf.fit(X_train, y_train)
+						clf = svm.SVC(probability=True).fit(X_train, y_train)
 					classifiers[go_id] = clf
 					positive_count[go_id] = pos_count
 		print("Done creating classifiers. Classifier count: ", len(classifiers))
@@ -428,17 +425,17 @@ if __name__ == "__main__":
 			prob_dict[ids[i]] = predict_go(test_point)
 		time_end_test = time()-time_start_test
 		print("Saving prob_dict...")
-		fname = "prob_dict_"+ont+"_"+dataset+"_"+algo+"_"+sample_threshold+".json"
+		fname = "prob_dict_"+ont+"_"+dataset+"_"+algo+"_"+str(sample_threshold)+".json"
 		with open(fname, "w") as f:
 			json.dump(prob_dict, f)		
                         print("OK!")
 			f.close()
-		print("Saving positive_count dict...")
-		fname = "positive_count_"+ont+"_"+dataset+"_"+algo+"_"+sample_threshold+".json"
-		with open(fname, "w") as f:
-			json.dump(positive_count, f)
-			print("OK!")
-			f.close()
+		#print("Saving positive_count dict...")
+		#fname = "positive_count_"+ont+"_"+dataset+"_"+algo+"_"+sample_threshold+".json"
+		#with open(fname, "w") as f:
+		#	json.dump(positive_count, f)
+		#	print("OK!")
+		#	f.close()
 	
 		print("Calculate F1/recall/precision by threshold")
 		time_start_eval = time()

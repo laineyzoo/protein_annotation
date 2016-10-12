@@ -7,6 +7,7 @@ import json
 import string
 import re
 import sys, getopt
+import pickle
 from time import time
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -39,123 +40,6 @@ def create_kmers(sequence, k):
 		return seq
 	else:
 		return sequence
-
-#check if all elements of an array are equal
-def array_equal(arr):
-	return all(np.isclose(x, arr[0]) for x in arr)
-
-#get distance to root
-def path_to_root(rank, taxonomy):
-	if root==rank:
-		return 0
-	q = collections.deque()
-	q.append(rank)
-	dist = 0
-	taxonomy[root]["parent"] = []
-	while q:
-		node = q.popleft()
-		dist += 1
-		parents = taxonomy[node]["parent"]
-		q.extend(parents)
-	return (dist-1)
-
-
-#return LCA of a list of nodes
-def get_lca(node_list, taxonomy):
-	if len(node_list)==0:
-		return ""
-	elif len(node_list)==1:
-		return node_list[0]
-	paths = list()
-	[paths.append(propagate_labels([node], taxonomy)) for node in node_list]
-	intersect = list()
-	path0 = paths[0]
-	path1 = paths[1]
-	intersect = list(set(path0) & set(paths1))
-	if len(node_list)>2:
-		for i in range(2, len(paths)):
-			intersect = list(set(intersect) & set(paths[i]))
-	intersect_len = [path_to_root(inter, taxonomy) for inter in intersect]
-	lca = intersect[intersect_len.index(max(intersect_len))]
-	return lca
-
-
-def filter_prediction(pred_labels, idx):
-	pred = pred_labels
-	path_len = [path_to_root(j, taxonomy) for j in pred]
-	counts = collections.Counter(path_len)
-	values = counts.values()
-	error_type = 0
-	#check if we have an ambiguous prediction
-	if max(values)>1:
-		lowest_pred_len = max(path_len)
-		prob_ont = prob_dict[sequence_ids_test[idx]]
-		#check if Case 1 vs 2 & 3
-		if counts[lowest_pred_len]>1:
-			lowest_labels = list()
-			lowest_labels_prob = list()
-			for i in range(len(path_len)):
-				if path_len[i]==lowest_pred_len:
-					lowest_labels.append(pred[i])
-					lowest_labels_prob.append(prob_ont[pred[i]])
-			#check for Case 3: ambiguous prediction is at the lowest level and 1 or more higher levels
-			if sum((np.array(values)>1)*1)>1:
-				print("Case 3")
-				error_type = 3
-				if array_equal(lowest_labels_prob):
-					pred = filter_prediction(lowest_labels, idx)
-				else:
-					highest_prob_label = lowest_labels[lowest_labels_prob.index(max(lowest_labels_prob))]
-					pred = propagate_labels([highest_prob_label], taxonomy)
-			else:
-				#Case 2: ambiguous prediction is at the lowest level only
-				print("Case 2")
-				error_type = 2
-				#Case 2 solution (check for Case 4)
-				#if all prob are equal, return LCA
-				if array_equal(lowest_labels_prob):
-					print("All sibling prob are equal. Get LCA.")
-					#we just need to return LCA since it will just get propagated upwards later
-					lca = get_lca(lowest_labels, taxonomy)
-					pred = propagate_labels([lca], taxonomy)
-				#one prob is higher than the rest, remove the rest
-				else:
-					print("One sibling has higher prob, return it.")
-					highest_prob_label = lowest_labels[lowest_labels_prob.index(max(lowest_labels_prob))]
-					pred = propagate_labels([highest_prob_label], taxonomy)
-		#Case 1
-		else:
-			#Case 1: ambiguous prediction is at a higher level but not in the lowest level
-			print("Case 1 ")
-			error_type = 1
-			max_val = max(values)
-			ambiguous_level = 0
-			for k in counts.keys():
-				if counts[k]==max_val:
-					ambiguous_level = k
-			ambiguous_labels = list()
-			ambiguous_labels_prob = list()
-			for i in range(len(path_len)):
-				if path_len[i]==ambiguous_level:
-					ambiguous_labels.append(pred[i])
-					ambiguous_labels_prob.append(prob_ont[pred[i]])
-			print("Ambiguous level: ", ambiguous_level)
-			lowest_label = pred_labels[path_len.index(lowest_pred_len)]
-			longest_path = propagate_labels([lowest_label], taxonomy)
-			highest_prob_label = ambiguous_labels[ambiguous_labels_prob.index(max(ambiguous_labels_prob))]
-			#check if probs at the ambiguous level are equal
-			if array_equal(ambiguous_labels_prob) or (highest_prob_label in longest_path):
-				print("All sib prob are equal | highest prob sib is in longest path, return longest path.")
-				pred = longest_path
-			else:
-				#one sibling has higher prob, return it
-				print("One sibling has higher prob and not in the longest path")
-				pred = propagate_labels([highest_prob_label], taxonomy)
-	else:
-		print("No ambiguous predictions. Do nothing.")
-	return pred
-
-
 
 
 #compute precision & recall for one test point
@@ -217,7 +101,7 @@ def predict_class(test_point):
 
 if __name__ == "__main__":
 	if len(sys.argv[1:]) < 4:
-		print("This script requires 6 arguments: root, kmer size, sample_threshold, classifier, dataset, filtering")
+		print("This script requires 5 arguments: root, kmer size, sample_threshold, classifier, dataset")
 	else:
 		time_start_all = time()
 		print("\nSTART\n")
@@ -239,14 +123,14 @@ if __name__ == "__main__":
 			print("Classifier: Naive-Bayes")
 		
 		dataset = sys.argv[5]
-		print("dataset: ",dataset)
 		if dataset == "R":
 			print("Dataset: RDP")
 		else:
 			print("Dataset: SILVA")
-		
-		filter = sys.argv[6]
-		print("Filter: ", filter)
+
+		sequence_ids = list()
+		sequence = list()
+		classification = list()
 		
 		#from this point, all nodes above the root will not be considered
 		if dataset == "R":
@@ -263,113 +147,113 @@ if __name__ == "__main__":
 		desc_root = taxonomy[root]["descendants"]
 		print("Descendants: ", len(desc_root))
 
-sequence_ids = list()
-sequence = list()
-classification = list()
-
-keys = data_dict.keys()
-for key in keys:
-		if data_dict[key]["class"][-1] in desc_root:
-				sequence_ids.append(key)
-				seq = create_kmers(data_dict[key]["sequence"],kmer)
-				sequence.append(seq)
-				classification.append(data_dict[key]["class"][-1])
+		keys = data_dict.keys()
+		for key in keys:
+				if data_dict[key]["class"][-1] in desc_root:
+						sequence_ids.append(key)
+						seq = create_kmers(data_dict[key]["sequence"],kmer)
+						sequence.append(seq)
+						classification.append(data_dict[key]["class"][-1])
 
 
-#shuffle dataset
-print("\nPreparing the dataset")
-(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
+		#shuffle dataset
+		print("\nPreparing the dataset")
+		(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
 
-#divide dataset
-index = int(len(sequence_ids)/5)*4
+		#divide dataset
+		index = int(len(sequence_ids)/5)*4
 
-X_train = sequence[:index]
-sequence_ids_train = sequence_ids[:index]
-classification_train = classification[:index]
+		X_train = sequence[:index]
+		sequence_ids_train = sequence_ids[:index]
+		classification_train = classification[:index]
 
-X_test = sequence[index:]
-sequence_ids_test = sequence_ids[index:]
-classification_test = classification[index:]
+		X_test = sequence[index:]
+		sequence_ids_test = sequence_ids[index:]
+		classification_test = classification[index:]
 
 		print("Train set: ", len(X_train))
 		print("Test set: ", len(X_test))
 	
 		print("Vectorizing dataset")
 		#vectorize features
-vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
-X_train = vectorizer.fit_transform(X_train)
-X_test = vectorizer.transform(X_test)
+		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+		X_train = vectorizer.fit_transform(X_train)
+		X_test = vectorizer.transform(X_test)
 
 		#create binary classifiers
 		print("Creating classifiers for taxonomy at root: ", root)
-time_start_classifier = time()
-classifiers = {}
-positive_count = {}
-for desc in desc_root:
-	descendants = taxonomy[desc]["descendants"]
-	y_train = list()
-	for c in classification_train:
-		if c in descendants:
-			y_train.append(1)
-		else:
-			y_train.append(0)
-	pos_count = y_train.count(1)
-	if pos_count>=sample_threshold:
-		if algo != "S" or pos_count==len(y_train):
-			clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
-			classifiers[desc] = clf
-		else:
-			clf = svm.SVC(probability=True)
-			clf.fit(X_train,y_train)
-			classifiers[desc] = clf
-		positive_count[desc] = pos_count
+		time_start_classifier = time()
+		classifiers = {}
+		positive_count = {}
+		for desc in desc_root:
+			descendants = taxonomy[desc]["descendants"]
+			y_train = list()
+			for c in classification_train:
+				if c in descendants:
+					y_train.append(1)
+				else:
+					y_train.append(0)
+			pos_count = y_train.count(1)
+			if pos_count>=sample_threshold:
+				if algo != "S" or pos_count==len(y_train):
+					clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
+					classifiers[desc] = clf
+				else:
+					clf = svm.SVC(probability=True)
+					clf.fit(X_train,y_train)
+					classifiers[desc] = clf
+				positive_count[desc] = pos_count
 		print("Done creating classifiers. No. of classifiers: ", len(classifiers))
 		time_end_classifier = time()-time_start_classifier
 
 		#run classifiers on the test set
-print("Running classifiers on the test set")
-time_start_test = time()
-prob_dict = {}
-for i in range(len(sequence_ids_test)):
-	test_point = X_test[i]
-	prob_dict[sequence_ids_test[i]] = predict_class(test_point)
-time_end_test = time()-time_start_test
+		print("Running classifiers on the test set")
+		time_start_test = time()
+		prob_dict = {}
+		for i in range(len(sequence_ids_test)):
+			test_point = X_test[i]
+			prob_dict[sequence_ids_test[i]] = predict_class(test_point)
+		time_end_test = time()-time_start_test
 	
 		#plot the precision/recall/f1 vs threshold
 		print("Calculating F1/recall/precision by threshold")
-time_start_eval = time()
-precision_list = list()
-recall_list = list()
-f1_list = list()
-for thresh in range(98, 101):
-	thresh = float(thresh)/100
-	total_precision = 0
-	total_recall = 0
-	for i in range(len(sequence_ids_test)):
-		true_labels = propagate_labels([classification_test[i]],taxonomy)
-		prob_ontology = prob_dict[sequence_ids_test[i]]
-		positive_labels = list()
-		for key in classifiers.keys():
-			if prob_ontology[key] >= thresh:
-				positive_labels.append(key)
-		predicted_labels = propagate_labels(positive_labels,taxonomy)
-		precision,recall = evaluate_prediction(true_labels, predicted_labels)
-		total_precision+=precision
-		total_recall+=recall
-	final_precision = total_precision/len(sequence_ids_test)
-	final_recall = total_recall/len(sequence_ids_test)
-	final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
-	precision_list.append(final_precision)
-	recall_list.append(final_recall)
-	f1_list.append(final_f1)
+		results_dict = {}
+		time_start_eval = time()
+		precision_list = list()
+		recall_list = list()
+		f1_list = list()
+		for thresh in range(0, 101):
+			thresh = float(thresh)/100
+			total_precision = 0
+			total_recall = 0
+			for i in range(len(sequence_ids_test)):
+				true_labels = propagate_labels([classification_test[i]],taxonomy)
+				prob_ontology = prob_dict[sequence_ids_test[i]]
+				positive_labels = list()
+				for key in classifiers.keys():
+					if prob_ontology[key] >= thresh:
+						positive_labels.append(key)
+				predicted_labels = propagate_labels(positive_labels,taxonomy)
+				results_dict[sequence_ids_test[i]] = {}
+				results_dict[sequence_ids_test[i]]["true"]=true_labels
+				results_dict[sequence_ids_test[i]]["predicted"]=predicted_labels
+				precision,recall = evaluate_prediction(true_labels, predicted_labels)
+				total_precision+=precision
+				total_recall+=recall
+			final_precision = total_precision/len(sequence_ids_test)
+			final_recall = total_recall/len(sequence_ids_test)
+			final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
+			precision_list.append(final_precision)
+			recall_list.append(final_recall)
+			f1_list.append(final_f1)
 
-max_f1 = max(f1_list)
-max_thresh = f1_list.index(max_f1)
-max_precision = precision_list[max_thresh]
-max_recall = recall_list[max_thresh]
-time_end_eval = time()-time_start_eval
-time_end_all = time()-time_start_all
-	
+		max_f1 = max(f1_list)
+		max_thresh = f1_list.index(max_f1)
+		max_precision = precision_list[max_thresh]
+		max_recall = recall_list[max_thresh]
+		time_end_eval = time()-time_start_eval
+		time_end_all = time()-time_start_all
+			
 
 		print("\n-----Results-----")
 		print("Max F1: ", max_f1)
@@ -396,10 +280,28 @@ time_end_all = time()-time_start_all
 		else:
 			print("Dataset: SILVA")
 		print("Classifiers: ", len(classifiers))
-		print("\nDONE!\n")
+		print("Script: ", sys.argv[0])
+                print("Taxonomy data: ", f1)
+                print("Sequence data: ", f2)
+		print("Saving results_dict to file...")
+		with open("results/results_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+".json","w") as f:
+			json.dump(results_dict, f)
+			print("OK!")
+		#print("Saving vectorizer to file...")
+		#with open("classifiers/vectorizer_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset,"w") as f:
+		#	pickle.dump(vectorizer, f)
+		#	print("OK!")
+		#print("Saving classifiers to file...")
+		#keys = classifiers.keys()
+		#for key in keys:
+		#	with open("classifiers/classifiers_"+key+"_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset,"w") as f:
+		#		pickle.dump(classifiers[key], f)
+		#print("OK!")
+		print("DONE!\n")
 
 
 		f = open("log_"+str(time()), "w")
+		print("Saving performance stats...")
 		print("\n-----Results-----", file=f)
 		print("Max F1: ", max_f1, file=f)
 		print("Max Precision: ", max_precision,file=f)
@@ -425,163 +327,9 @@ time_end_all = time()-time_start_all
 		else:
 			print("Dataset: SILVA", file=f)
 		print("Classifiers: ", len(classifiers),file=f)
-		print("\nDONE!\n", file=f)
+		print("Script: ", sys.argv[0],file=f)
+		print("Taxonomy data: ", f1, file=f)
+		print("Sequence data: ", f2, file=f)
+		print("\nDONE!")
 
 
-
-
-
-true_labels = []
-pred_labels = []
-for i in range(len(sequence_ids_test)):
-	true_labels.append(propagate_labels([classification_test[i]],taxonomy))
-	prob_ontology = prob_dict[sequence_ids_test[i]]
-	pos_labels = list()
-	for key in classifiers.keys():
-		if prob_ontology[key] >= 0.99:
-			pos_labels.append(key)
-	pred_labels.append(pos_labels)
-
-
-for i in range(80,90):
-	if len(set(pred_labels[i])-set(true_labels[i]))>0:
-		print("\n", i)
-		print("True Labels:", len(true_labels[i]))
-		for j in range(len(true_labels[i])):
-			print(true_labels[i][j])
-		print("\nPred Labels:", len(pred_labels[i]))
-		for j in range(len(pred_labels[i])):
-			print(pred_labels[i][j])
-
-
-f = open("taxonomy_latest.json","r")
-taxonomy = json.load(f)
-f = open("silva_dict_latest.json","r")
-silva_dict = json.load(f)
-
-keys = taxonomy.keys()
-unid = list()
-for k in keys:
-	if "unidentified" in k:
-		unid.append(k)
-
-for k in keys:
-	if k in unid:
-		del taxonomy[k]
-
-keys = taxonomy.keys()
-for k in keys:
-	children = taxonomy[k]["children"]
-	descendants = taxonomy[k]["descendants"]
-	[children.remove(c) for c in children if c in unid]
-	[descendants.remove(d) for d in descendants if d in unid]
-	taxonomy[k]["children"] = children
-	taxonomy[k]["descendants"] = descendants
-
-silva_keys = silva_dict.keys()
-for k in silva_keys:
-	species = silva_dict[k]["class"][-1]
-	if species in unid:
-		del silva_dict[k]
-
-
-unclass = list()
-
-for k in keys:
-	if "unclassified" in k:
-		unclass.append(k)
-
-for k in keys:
-	if k in unclass:
-		del taxonomy[k]
-
-keys = taxonomy.keys()
-for k in keys:
-	children = taxonomy[k]["children"]
-	descendants = taxonomy[k]["descendants"]
-	[children.remove(c) for c in children if c in unclass]
-	[descendants.remove(d) for d in descendants if d in unclass]
-	taxonomy[k]["children"] = children
-	taxonomy[k]["descendants"] = descendants
-
-silva_keys = silva_dict.keys()
-for k in silva_keys:
-	species = silva_dict[k]["class"][-1]
-	if species in unclass:
-		del silva_dict[k]
-
-meta = list()
-for k in keys:
-	if "metagenome" in k or "metagenomic" in k:
-		meta.append(k)
-
-for k in keys:
-	if k in meta:
-		del taxonomy[k]
-
-keys = taxonomy.keys()
-for k in keys:
-	children = taxonomy[k]["children"]
-	descendants = taxonomy[k]["descendants"]
-	[children.remove(c) for c in children if c in meta]
-	[descendants.remove(d) for d in descendants if d in meta]
-	taxonomy[k]["children"] = children
-	taxonomy[k]["descendants"] = descendants
-
-silva_keys = silva_dict.keys()
-for k in silva_keys:
-	species = silva_dict[k]["class"][-1]
-	if species in meta:
-		del silva_dict[k]
-
-
-environ = list()
-for k in keys:
-	if "environmental" in k:
-		environ.append(k)
-
-keys = taxonomy.keys()
-for k in keys:
-	if k in environ:
-		del taxonomy[k]
-
-keys = taxonomy.keys()
-for k in keys:
-	children = taxonomy[k]["children"]
-	descendants = taxonomy[k]["descendants"]
-	[children.remove(c) for c in children if c in environ]
-	[descendants.remove(d) for d in descendants if d in environ]
-	taxonomy[k]["children"] = children
-	taxonomy[k]["descendants"] = descendants
-
-silva_keys = silva_dict.keys()
-for k in silva_keys:
-	species = silva_dict[k]["class"][-1]
-	if species in environ:
-		del silva_dict[k]
-
-tax_keys = taxonomy.keys()
-silva_keys = silva_dict.keys()
-not_leaf = 0
-for k in silva_keys:
-	species = silva_dict[k]["class"][-1]
-	if species not in tax_keys:
-		del silva_dict[k]
-	elif len(taxonomy[species]["children"])>0:
-		print("Not a leaf, delete sample")
-		not_leaf+=1
-		del silva_dict[k]
-
-
-tax_keys = rdp_taxonomy.keys()
-rdp_keys = rdp_dict.keys()
-not_leaf = 0
-for k in rdp_keys:
-	genus = rdp_dict[k]["class"][-1]
-	if genus not in tax_keys:
-		print("Genus not in taxonomy")
-		del rdp_dict[k]
-	elif len(rdp_taxonomy[genus]["children"])>0:
-		print("Not a leaf, delete sample")
-		not_leaf+=1
-		del rdp_dict[k]

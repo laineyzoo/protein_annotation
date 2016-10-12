@@ -148,29 +148,20 @@ def filter_prediction(pred_labels, idx, taxonomy):
 	return pred,error_type
 
 
-#compute leaf-level accuracy
-def compute_accuracy(true_labels, pred_labels, taxonomy):
-	acc = 0
-	true_path_len = [path_to_root(x, taxonomy) for x in true_labels]
-	pred_path_len = [path_to_root(x, taxonomy) for x in pred_labels]
-	max_path = max(true_path_len)
-	true_leaf = true_labels[true_path_len.index(max_path)]
-	idx = np.where(np.array(pred_path_len)==max_path)[0]
-	pred_leaves = list(np.array(pred_labels)[idx])
-	if true_leaf in pred_leaves:
-		acc = 1
-	return acc
-
 #compute precision & recall for one test point
-def evaluate_prediction(true_labels, pred_labels):
+def evaluate_prediction(true_labels, pred_labels, label_list):
 	tp = set(pred_labels).intersection(true_labels)
 	precision = 0.0
 	recall = 0.0
+	acc = 0.0
 	if len(pred_labels)!=0:
 		precision = len(tp)/len(pred_labels)
 	if len(true_labels)!=0:
 		recall = len(tp)/len(true_labels)
-	return precision,recall
+	if len(label_list)!=0:
+		tn = set(label_list)-(set(true_labels+pred_labels))
+		acc = (len(tp)+len(tn))/len(label_list)
+	return precision,recall,acc
 
 
 # propagate the given label/rank upwards in the taxonomy until it reaches a root
@@ -196,6 +187,21 @@ def propagate_labels(labels,taxonomy):
 	return label_list
 
 
+
+#give prediction probabiliy for this test point given a classifier
+def predict_class_with_classifier(test_point, clf):
+	positive_prob = 0.0 
+       	prob = clf.predict_proba(test_point)[0]
+       	classes = clf.classes_
+       	if len(classes)==2:
+        	positive_prob = prob[classes[:]==1]
+       	else:   
+       		if classes[0]==0:
+                	positive_prob = 0.0
+               	else:   
+                  	positive_prob = 1.0
+	return positive_prob
+
 #give prediction probabilities for this test point
 def predict_class(test_point):
 	prob_ontology = {}
@@ -204,7 +210,7 @@ def predict_class(test_point):
 		prob = clf.predict_proba(test_point)[0]
 		classes = clf.classes_
 		if len(classes)==2:
-			positive_prob = prob[classes[:]==1][0]
+			positive_prob = prob[classes[:]==1]
 		else:
 			if classes[0]==0:
 				positive_prob = 0.0
@@ -259,84 +265,115 @@ if __name__ == "__main__":
 			f2 = open("silva_dict.json", "r")
 		
 
-taxonomy = json.load(f1)
-data_dict = json.load(f2)
+		taxonomy = json.load(f1)
+		data_dict = json.load(f2)
 
-#Only use the parts of the dataset that belongs to the root
-desc_root = taxonomy[root]["descendants"]
-print("Descendants: ", len(desc_root))
+		#Only use the parts of the dataset that belongs to the root
+		desc_root = taxonomy[root]["descendants"]
+		print("Descendants: ", len(desc_root))
 
-sequence_ids = list()
-sequence = list()
-classification = list()
+                sequence_ids = list()
+                sequence = list()
+                classification = list()
+		
+		keys = data_dict.keys()
+		for key in keys:
+				if data_dict[key]["class"][-1] in desc_root:
+						sequence_ids.append(key)
+						seq = create_kmers(data_dict[key]["sequence"],kmer)
+						sequence.append(seq)
+						classification.append(data_dict[key]["class"][-1])
 
-keys = data_dict.keys()
-for key in keys:
-		if data_dict[key]["class"][-1] in desc_root:
-				sequence_ids.append(key)
-				seq = create_kmers(data_dict[key]["sequence"],kmer)
-				sequence.append(seq)
-				classification.append(data_dict[key]["class"][-1])
 
+		#shuffle dataset
+		print("\nPreparing the dataset")
+		(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
 
-#shuffle dataset
-print("\nPreparing the dataset")
-(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
+		#divide dataset
+		index = int(len(sequence_ids)/5)*4
 
-#divide dataset
-index = int(len(sequence_ids)/5)*4
+		X_train = sequence[:index]
+		sequence_ids_train = sequence_ids[:index]
+		classification_train = classification[:index]
 
-X_train = sequence[:index]
-sequence_ids_train = sequence_ids[:index]
-classification_train = classification[:index]
+		X_test = sequence[index:]
+		sequence_ids_test = sequence_ids[index:]
+		classification_test = classification[index:]
 
-X_test = sequence[index:]
-sequence_ids_test = sequence_ids[index:]
-classification_test = classification[index:]
+		print("Train set: ", len(X_train))
+		print("Test set: ", len(X_test))
+	
+		#vectorize features
+		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+		X_train = vectorizer.fit_transform(X_train)
+		X_test = vectorizer.transform(X_test)
 
-print("Train set: ", len(X_train))
-print("Test set: ", len(X_test))
+		#create binary classifiers
+		print("Creating classifiers")
+		time_start_classifier = time()
+		#classifiers = {}
+		#positive_count = {}
+		prob_dict = {}
+		for i in range(len(sequence_ids_test)):
+			prob_dict[sequence_ids_test[i]] = {}
+		
+		for desc in desc_root:
+			descendants = taxonomy[desc]["descendants"]
+			y_train = list()
+			for c in classification_train:
+				if c in descendants:
+					y_train.append(1)
+				else:
+					y_train.append(0)
+			pos_count = y_train.count(1)
+			if pos_count>=sample_threshold:
+				if algo != "S" or pos_count==len(y_train):
+					clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
+				#classifiers[desc] = clf
+				else:
+					clf = svm.SVC(probability=True).fit(X_train,y_train)
+				for i in range(len(sequence_ids_test)):
+					prob_dict[sequence_ids_test[i]][desc] = predict_class_with_classifier(X_test[i],clf)
 
-#vectorize features
-vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
-X_train = vectorizer.fit_transform(X_train)
-X_test = vectorizer.transform(X_test)
-
-#create binary classifiers
-print("Creating classifiers")
-time_start_classifier = time()
-classifiers = {}
-positive_count = {}
-for desc in desc_root:
-	descendants = taxonomy[desc]["descendants"]
-	y_train = list()
-	for c in classification_train:
-		if c in descendants:
-			y_train.append(1)
-		else:
-			y_train.append(0)
-	pos_count = y_train.count(1)
-	if pos_count>=sample_threshold:
-		if algo != "S" or pos_count==len(y_train):
-			clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
-			classifiers[desc] = clf
-		else:
-			clf = svm.SVC(probability=True)
-			clf.fit(X_train,y_train)
-			classifiers[desc] = clf
-		positive_count[desc] = pos_count
-		print("Done creating classifiers. No. of classifiers: ", len(classifiers))
+		#classifiers[desc] = clf
+		#positive_count[desc] = pos_count
+		print("Done creating and testing classifiers. No. of classifiers: ", len(classifiers))
 		time_end_classifier = time()-time_start_classifier
 
+		#print("Saving classifiers to file...")
+		#classifier_keys = classifiers.keys()
+		#for key in classifier_keys:
+		#	key_sub = re.sub("/","",key)
+		#	with open("classifiers/classifiers_"+key_sub+"_"+str(kmer),"w") as f:
+		#		pickle.dump(classifiers[key], f)
+		#	print("OK!")
+		
+		#print("Saving vectorizer to file...")
+		#with open("classifiers/vectorizer_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset,"w") as f:
+		#	pickle.dump(vectorizer, f)
+		#	print("OK!")
+		
+		#del classifiers
+
 		#run classifiers on the test set
-		print("Running classifiers on the test set")
-time_start_test = time()
-prob_dict = {}
-for i in range(len(sequence_ids_test)):
-	test_point = X_test[i]
-	prob_dict[sequence_ids_test[i]] = predict_class(test_point)
-		time_end_test = time()-time_start_test
+		#print("Running classifiers on the test set")
+		#prob_dict = {}
+		#for i in range(len(sequence_ids_test)):
+		#	prob_dict[sequence_ids_test[i]] = {}
+		#for key in classifier_keys:
+		#	key_sub = re.sub("/","",key)
+		#	f = open("classifiers/classifiers_"+key_sub+"_"+str(kmer),"r")
+		#	clf = pickle.load(f)
+		#       	for i in range(len(sequence_ids_test)):
+		#               	test_point = X_test[i]
+		#               	prob_dict[sequence_ids_test[i]][key] = predict_class_with_classifier(test_point, clf)
+		#time_end_test = time()-time_start_test
 	
+		print("Saving prob_dict to file...")
+		with open("results/prob_dict_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".json","w") as f:
+			json.dump(prob_dict, f)
+			print("OK!")
+
 		#plot the precision/recall/f1 vs threshold
 		print("Calculating F1/recall/precision by threshold")
 		time_start_eval = time()
@@ -475,27 +512,9 @@ for i in range(len(sequence_ids_test)):
 		print("Script: ", sys.argv[0])
                 print("Taxonomy data: ", f1)
                 print("Sequence data: ", f2)
-		print("Saving results_dict to file...")
-		with open("results/results_no_filter"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".json","w") as f:
-			json.dump(results_dict, f)
-			print("OK!")
-		if filtering =="Y":
-			print("Saving results_filter_dict to file...")
-			with open("results/results_filter_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".json","w") as f:
-                        	json.dump(results_filter_dict, f)
-                        	print("OK!")
-		#print("Saving vectorizer to file...")
-		#with open("classifiers/vectorizer_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset,"w") as f:
-		#	pickle.dump(vectorizer, f)
-		#	print("OK!")
-		#print("Saving classifiers to file...")
-		#keys = classifiers.keys()
-		#for key in keys:
-		#	with open("classifiers/classifiers_"+key+"_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset,"w") as f:
-		#		pickle.dump(classifiers[key], f)
-		#print("OK!")
 
-		f = open("log_"+str(time()), "w")
+		fname = "log_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".txt"
+		f = open(fname, "w")
 		print("Saving performance stats...")
 		print("\n-----Results-----", file=f)
 		print("Max F1: ", max_f1, file=f)
@@ -539,21 +558,5 @@ for i in range(len(sequence_ids_test)):
 		print("Taxonomy data: ", f1, file=f)
 		print("Sequence data: ", f2, file=f)
 		print("DONE!\n")
-
-
-true_labels = []
-pred_labels = []
-for i in range(len(sequence_ids_test)):
-	true_labels.append(propagate_labels([classification_test[i]],taxonomy))
-	prob_ontology = prob_dict[sequence_ids_test[i]]
-	positive_labels = list()
-	for key in classifiers.keys():
-		if prob_ontology[key] >= 0.99:
-			positive_labels.append(key)
-	pred_labels.append(propagate_labels(positive_labels,taxonomy))
-
-
-
-
 
 

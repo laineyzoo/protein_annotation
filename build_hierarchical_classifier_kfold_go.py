@@ -217,7 +217,7 @@ if __name__ == "__main__":
 		dataset = sys.argv[2]
 		if dataset=="U":
 			print("Dataset: Uniprot")
-		elif datase == "P5":
+		elif dataset == "P5":
 			print("Dataset: PubMed papers w/ GO names AND Uniprot")
 		elif dataset=="P6":
 			print("Dataset: PubMed papers w/ gene names AND Uniprot")
@@ -481,19 +481,19 @@ if __name__ == "__main__":
 		print("\nDONE!\n")
 
 
-		logfile = "log_go_kfold_"+ont+"_"+dataset+"_"+algo+"_"+sample_threshold+".txt"
+		logfile = "log_go_kfold_"+ont+"_"+dataset+"_"+algo+"_"+str(sample_threshold)+".txt"
 		f = open(logfile,"w")
 		print("\n-----Results-----")
 		print("Avg F1: ", np.mean(np.array(f1_kfold)), file=f)
 		print("Avg Precision: ", np.mean(np.array(precision_kfold)), file=f)
 		print("Avg Recall: ", np.mean(np.array(recall_kfold)), file=f)
 		print("Avg Threshold: ", np.mean(np.array(thresh_kfold)), file=f)
-		for fold in folds:
-			print("\nFold ", fold, file=f)
-			print("Max F1: ", f1_kfold[fold])
-			print("Max Precision: ", precision_kfold[fold])
-			print("Max Recall: ", recall_kfold[fold])
-			print("Best Threshold: ", thresh_kfold[fold])
+		for j in range(len(f1_kfold)):
+			print("\nFold ", j, file=f)
+			print("Max F1: ", f1_kfold[j])
+			print("Max Precision: ", precision_kfold[j])
+			print("Max Recall: ", recall_kfold[j])
+			print("Best Threshold: ", thresh_kfold[j])
 		
 		
 		print("\n-----Settings-----")
