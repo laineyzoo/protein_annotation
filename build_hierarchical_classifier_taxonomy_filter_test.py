@@ -559,4 +559,3 @@ if __name__ == "__main__":
 		print("Sequence data: ", f2, file=f)
 		print("DONE!\n")
 
-
