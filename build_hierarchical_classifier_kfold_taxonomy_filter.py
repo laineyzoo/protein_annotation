@@ -153,15 +153,14 @@ def filter_prediction(pred_labels, idx, taxonomy):
 #compute leaf-level accuracy
 def compute_accuracy(true_labels, pred_labels, taxonomy):
 	acc = 0
-	pred_path_len = [path_to_root(x, taxonomy) for x in pred_labels]
 	true_path_len = [path_to_root(x, taxonomy) for x in true_labels]
-	if max(true_path_len) == max(pred_path_len):
-		max_path = max(true_path_len)
-		true_leaf = true_labels[true_path_len.index(max_path)]
-		if true_leaf in pred_labels:
-			acc = 1
-	else:
-		acc = -1
+	pred_path_len = [path_to_root(x, taxonomy) for x in pred_labels]
+	max_path = max(true_path_len)
+	true_leaf = true_labels[true_path_len.index(max_path)]
+	idx = np.where(np.array(pred_path_len)==max_path)[0]
+	pred_leaves = list(np.array(pred_labels)[idx])
+	if true_leaf in pred_leaves:
+		acc = 1
 	return acc
 
 
@@ -222,11 +221,11 @@ def predict_class(test_point):
 
 
 if __name__ == "__main__":
-	if len(sys.argv[1:]) < 7:
-		print("This script requires 7 arguments: root, kmer size, sample_threshold, classifier, dataset, filtering, no. of folds")
+	if len(sys.argv[1:]) < 6:
+		print("This script requires 6 arguments: root, kmer size, sample_threshold, classifier, dataset, filtering")
 	else:
 		time_start_all = time()
-		print("\n=====START N-fold Cross-validation=====\n")
+		print("\n=====START 5-fold Cross-validation=====\n")
 		print("Settings: ")
 
 		root = sys.argv[1]
@@ -257,9 +256,6 @@ if __name__ == "__main__":
 		filtering = sys.argv[6]
 		print("Filtering: ", filtering)
 
-		folds = int(sys.argv[7])
-		print("Folds: ", folds)
-
 		taxonomy = json.load(f1)
 		data_dict = json.load(f2)
 		f1.close()
@@ -287,7 +283,8 @@ if __name__ == "__main__":
 		print("\nPreparing the dataset")
 		(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
 		
-		#divide the dataset into n-folds
+		#divide the dataset into 5 folds
+		folds = 5
 		total = len(sequence)
 		div = int(total/folds)
 		precision_kfold = []
@@ -295,23 +292,21 @@ if __name__ == "__main__":
 		acc_kfold = []
 		f1_kfold = []
 		thresh_kfold = []
-		thresh_acc_kfold = []
-		train_size_kfold = []
-		test_size_kfold = []
 		if filtering == "Y":
 			precision_filter_kfold = []
 			recall_filter_kfold = []
 			acc_filter_kfold = []
 			f1_filter_kfold = []
 			thresh_filter_kfold = []
-			thresh_acc_filter_kfold = []
 			error_types_kfold = []
-		for fold in range(folds):
-			print("Fold ", (fold+1))
-			test_start = int(fold*div)
-			test_end = int((fold+1)*div)
-			
-			#prepare train set
+		for f in range(folds):
+			print("Fold ", (f+1))
+			test_start = int(f*div)
+			test_end = int((f+1)*div)
+			X_test = sequence[test_start:test_end]
+			classification_test = classification[test_start:test_end]
+			sequence_ids_test = sequence_ids[test_start:test_end]
+
 			if test_start == 0:
 				train_start = div
 				train_end = total
@@ -332,32 +327,9 @@ if __name__ == "__main__":
 					classification_train = classification[train_start:train_end]+classification[train_start2:train_end2]
 					sequence_ids_train = sequence_ids[train_start:train_end]+sequence_ids[train_start2:train_end2]
 
-			#prepare test set
-			if dataset=="R":
-				X_test = []
-				classification_test = []
-				sequence_ids_test = []
-				
-				X_test_temp = sequence[test_start:test_end]
-				classification_test_temp = classification[test_start:test_end]
-				sequence_ids_test_temp = sequence_ids[test_start:test_end]
-
-				for i in range(len(X_test_temp)):
-					if classification_train.count(classification_test_temp[i])>=2:
-						X_test.append(X_test_temp[i])
-						sequence_ids_test.append(sequence_ids_test_temp[i])
-						classification_test.append(classification_test_temp[i])
-			else:
-				X_test = sequence[test_start:test_end]
-				classification_test = classification[test_start:test_end]
-				sequence_ids_test = sequence_ids[test_start:test_end]
-
-			train_size = len(X_train)
-			test_size = len(X_test)
-			train_size_kfold.append(train_size)
-			test_size_kfold.append(test_size)
-			print("Train set: ", train_size)
-			print("Test set: ", test_size)
+			
+			print("Train set: ", len(X_train))
+			print("Test set: ", len(X_test))
 			#vectorize features
 			vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 			X_train = vectorizer.fit_transform(X_train)
@@ -400,24 +372,23 @@ if __name__ == "__main__":
 			recall_list = []
 			acc_list = []
 			f1_list = []
-			results_dict = {}
 			if filtering == "Y":
 				precision_filter_list = []
 				recall_filter_list = []	
 				acc_filter_list = []	
 				f1_filter_list = []			
-				error_types = []
+				error_types = []				
+
 			for thresh in range(0,101):
 				thresh = float(thresh)/100
 				total_precision = 0
 				total_recall = 0
 				total_acc = 0
-				total_pred = 0
+
 				if filtering == "Y":
 					total_precision_filter = 0
 					total_recall_filter = 0
 					total_acc_filter = 0
-					total_pred_filter = 0
 					case_0 = 0
 					case_1 = 0
 				for i in range(len(sequence_ids_test)):
@@ -427,7 +398,6 @@ if __name__ == "__main__":
 					for key in classifiers.keys():
 						if prob_ontology[key] >= thresh:
 							positive_labels.append(key)
-					filtered_labels = []
 					if filtering == "Y":
 						filtered_labels,case_type = filter_prediction(positive_labels,i, taxonomy)
 						if case_type == 0:
@@ -438,54 +408,40 @@ if __name__ == "__main__":
 						acc_filter = compute_accuracy(true_labels, filtered_labels, taxonomy)
 						total_precision_filter+=precision_filter
 						total_recall_filter+=recall_filter
-						if acc_filter>=0:
-							total_acc_filter+=acc_filter
-							total_pred_filter+=1
+						total_acc_filter+=acc_filter
 					predicted_labels = propagate_labels(positive_labels, taxonomy)
 					precision,recall = evaluate_prediction(true_labels, predicted_labels)
 					acc = compute_accuracy(true_labels, predicted_labels, taxonomy)
 					total_precision+=precision
 					total_recall+=recall
-					if acc>=0:
-						total_acc+=acc
-						total_pred+=1
-					results_dict[sequence_ids_test[i]]={}
-					results_dict[sequence_ids_test[i]]["true"] = true_labels
-					results_dict[sequence_ids_test[i]]["predicted"] = predicted_labels
-					if filtering == "Y":
-						results_dict[sequence_ids_test[i]]["filtered"] = filtered_labels
+					total_acc+=acc
 
 				if filtering == "Y":
-					final_precision_filter = total_precision_filter/len(sequence_ids_test)
-					final_recall_filter = total_recall_filter/len(sequence_ids_test)
-					final_acc_filter = total_acc_filter/total_pred_filter
+                        		final_precision_filter = total_precision_filter/len(sequence_ids_test)
+                        		final_recall_filter = total_recall_filter/len(sequence_ids_test)
+                        		final_acc_filter = total_acc_filter/len(sequence_ids_test)
 					final_f1_filter = (2*final_precision_filter*final_recall_filter)/(final_precision_filter+final_recall_filter)
-					precision_filter_list.append(final_precision_filter)
-					recall_filter_list.append(final_recall_filter)
+                        		precision_filter_list.append(final_precision_filter)
+                        		recall_filter_list.append(final_recall_filter)
 					acc_filter_list.append(final_acc_filter)
-					f1_filter_list.append(final_f1_filter)
+                        		f1_filter_list.append(final_f1_filter)							
 					error_types.append([case_0, case_1])
 
 				final_precision = total_precision/len(sequence_ids_test)
 				final_recall = total_recall/len(sequence_ids_test)
-				final_acc = total_acc/total_pred
+				final_acc = total_acc/len(sequence_ids_test)
 				final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
 				precision_list.append(final_precision)
 				recall_list.append(final_recall)
 				acc_list.append(final_acc)
 				f1_list.append(final_f1)
-				
-				if thresh > 0.10:
-					with open("results/results_dict_"+root+"_"+str(kmer)+"_"+str(thresh)+"_"+str(fold)+"_"+dataset+".json","w") as f:
-						json.dump(results_dict, f)
 
 			if filtering == "Y":
 				max_f1_filter = max(f1_filter_list)
 				max_thresh_filter = f1_filter_list.index(max_f1_filter)
 				max_precision_filter = precision_filter_list[max_thresh_filter]
 				max_recall_filter = recall_filter_list[max_thresh_filter]
-				max_acc_filter = max(acc_filter_list)
-				max_acc_thresh_filter = acc_filter_list.index(max_acc_filter)
+				max_acc_filter = acc_filter_list[max_thresh_filter]
 				max_type_0 = error_types[max_thresh_filter][0]
 				max_type_1 = error_types[max_thresh_filter][1]
 				max_type_n = len(sequence_ids_test)-(max_type_1+max_type_0)	
@@ -493,38 +449,33 @@ if __name__ == "__main__":
 				precision_filter_kfold.append(max_precision_filter)
 				recall_filter_kfold.append(max_recall_filter)
 				acc_filter_kfold.append(max_acc_filter)		
-				thresh_filter_kfold.append(max_thresh_filter)
-				thresh_acc_filter_kfold.append(max_acc_thresh_filter)
+				thresh_filter_kfold.append(max_thresh_filter)	
 				error_types_kfold.append([max_type_0, max_type_1, max_type_n])
 			max_f1 = max(f1_list)
 			max_thresh = f1_list.index(max_f1)
 			max_precision = precision_list[max_thresh]
 			max_recall = recall_list[max_thresh]
-			max_acc = max(acc_list)
-			max_acc_thresh = acc_list.index(max_acc)
+			max_acc = acc_list[max_thresh]
 			f1_kfold.append(max_f1)
 			precision_kfold.append(max_precision)
 			recall_kfold.append(max_recall)
 			acc_kfold.append(max_acc)
 			thresh_kfold.append(max_thresh)
-			thresh_acc_kfold.append(max_acc_thresh)
 
 		print("\n-----Results-----")
 		print("Avg F1: ", np.mean(np.array(f1_kfold)))
 		print("Avg Precision: ", np.mean(np.array(precision_kfold)))
 		print("Avg Recall: ", np.mean(np.array(recall_kfold)))
-		print("Avg Threshold: ", np.mean(np.array(thresh_kfold)))
 		print("Avg Accuracy: ", np.mean(np.array(acc_kfold)))
-		print("Avg Accuracy Thresh: ", np.mean(np.array(thresh_acc_kfold)))
-		
+		print("Avg Threshold: ", np.mean(np.array(thresh_kfold)))
+
 		if filtering == "Y":
-			print("\nAvg Filtered F1: ", np.mean(np.array(f1_filter_kfold)))
-			print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)))
-			print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)))
-			print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)))
-			print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)))
-			print("Avg Filtered Accuracy Thresh: ", np.mean(np.array(thresh_acc_filter_kfold)))
-			means = np.mean(np.array(error_types_kfold), axis=0)
+	                print("Avg Filtered F1: ", np.mean(np.array(f1_filter_kfold)))
+        	        print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)))
+                	print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)))
+                	print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)))
+                	print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)))
+			means = np.mean(np.array(error_types_kfold), axis=0)	
 			print("\nAvg Case 0 Predictions: ", means[0])
 			print("Avg Case 1 Predictions: ", means[1])
 			print("Avg Case 2 or 3 Predictions: ", means[2])
@@ -534,90 +485,75 @@ if __name__ == "__main__":
 			print("F1: ", f1_kfold[j])
 			print("Precision: ", precision_kfold[j])
 			print("Recall: ", recall_kfold[j])		
-			print("Thresh: ", thresh_kfold[j])
-			print("Acc: ", acc_kfold[j])
-			print("Acc Thresh: ", thresh_acc_kfold[j])
+			print("Thresh: ", thresh_kfold[j])			
 			if filtering == "Y":
-				print("\nFiltered F1: ", f1_filter_kfold[j])
-				print("Filtered Precision: ", precision_filter_kfold[j])
-				print("Filtered Recall: ", recall_filter_kfold[j])
-				print("Filtered Thresh: ", thresh_filter_kfold[j])
-				print("Filtered Acc: ", acc_filter_kfold[j])
-				print("Filtered Acc Thresh: ", thresh_acc_filter_kfold[j])
+                        	print("\nFiltered F1: ", f1_filter_kfold[j])
+                        	print("Filtered Precision: ", precision_kfold[j])
+                        	print("Filtered Recall: ", recall_kfold[j])              
+                        	print("Filtered Thresh: ", thresh_kfold[j]) 
 				print("\nCase 0 Predictions: ", error_types_kfold[j][0])
 				print("Case 1 Predictions: ", error_types_kfold[j][1])
 				print("Case 2 or 3 Predictions: ", error_types_kfold[j][2])			
 
 		print("\n-----Settings-----")
-		print("Root: ", root)
-		print("Classifier: ", algo)
-		print("Sample Threshold: ", sample_threshold)
-		print("K-mer size: ", kmer)
-		print("Dataset: ", dataset)
-		print("Filtering: ", filtering)
+                print("Root: ", root)
+                print("Classifier: ", algo)
+                print("Sample Threshold: ", sample_threshold)
+                print("K-mer size: ", kmer)
+                print("Dataset: ", dataset)
+                print("Filtering: ", filtering)
 		print("\nTotal time: ", time()-time_start_all)		
 		print("Script: ", sys.argv[0])
 		print("Taxonomy data: ", f1)
 		print("Sequence data: ", f2)
-		print("Folds: ", folds)
 		print("\nDONE!\n")
 		
-		f = open("log_kfold_"+root+"_"+algo+"_"+str(kmer)+"_"+dataset,"w")
+		f = open("log_"+str(time()),"w")
 		print("Saving performance stats to file...")
 		print("\n-----Results-----", file=f)
-		print("Avg F1: ", np.mean(np.array(f1_kfold)), file=f)
-		print("Avg Precision: ", np.mean(np.array(precision_kfold)), file=f)
-		print("Avg Recall: ", np.mean(np.array(recall_kfold)), file=f)
-		print("Avg Threshold: ", np.mean(np.array(thresh_kfold)), file=f)
-		print("Avg Accuracy: ", np.mean(np.array(acc_kfold)),file=f)
-		print("Avg Accuracy Thresh: ", np.mean(np.array(thresh_acc_kfold)), file=f)
-		
-		if filtering == "Y":
-			print("\nAvg Filtered F1: ", np.mean(np.array(f1_filter_kfold)), file=f)
-			print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)), file=f)
-			print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)), file=f)
-			print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)), file=f)
-			print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)), file=f)
-			print("Avg Filtered Accuracy Thresh: ", np.mean(np.array(thresh_acc_filter_kfold)), file=f)
-			means = np.mean(np.array(error_types_kfold), axis=0)
-			print("\nAvg Case 0 Predictions: ", means[0], file=f)
-			print("Avg Case 1 Predictions: ", means[1], file=f)
-			print("Avg Case 2 or 3 Predictions: ", means[2], file=f)
+                print("Avg F1: ", np.mean(np.array(f1_kfold)), file=f)
+                print("Avg Precision: ", np.mean(np.array(precision_kfold)), file=f)
+                print("Avg Recall: ", np.mean(np.array(recall_kfold)), file=f)
+                print("Avg Threshold: ", np.mean(np.array(thresh_kfold)), file=f)
 
-		for j in range(len(f1_kfold)):
-			print("\nFold "+str(j+1)+": ", file=f)
-			print("Train size: ", train_size_kfold[j], file=f)
-			print("Test size: ", test_size_kfold[j], file=f)
-			print("F1: ", f1_kfold[j], file=f)
-			print("Precision: ", precision_kfold[j],file=f)
-			print("Recall: ", recall_kfold[j],file=f)      
-			print("Thresh: ", thresh_kfold[j],file=f)
-			print("Acc: ", acc_kfold[j], file=f)
-			print("Acc Thresh: ", thresh_acc_kfold[j], file=f)
-				
-			if filtering == "Y":                    
-				print("\nFiltered F1: ", f1_filter_kfold[j], file=f)
-				print("Filtered Precision: ", precision_kfold[j], file=f)
-				print("Filtered Recall: ", recall_kfold[j], file=f)
-				print("Filtered Thresh: ", thresh_kfold[j], file=f)
-				print("Filtered Acc: ", acc_filter_kfold[j], file=f)
-				print("Filtered Acc Thresh: ", thresh_acc_filter_kfold[j], file=f)
-				print("\nCase 0 Predictions: ", error_types_kfold[j][0], file=f)
-				print("Case 1 Predictions: ", error_types_kfold[j][1], file=f)
-				print("Case 2 or 3 Predictions: ", error_types_kfold[j][2], file=f)
+                if filtering == "Y":
+                        print("Avg Filtered F1: ", np.mean(np.array(f1_filter_kfold)), file=f)
+                        print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)), file=f)
+                        print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)), file=f)
+                        print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)), file=f)
+                        print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)), file=f)
+                        means = np.mean(np.array(error_types_kfold), axis=0)
+                        print("\nAvg Case 0 Predictions: ", means[0], file=f)
+                        print("Avg Case 1 Predictions: ", means[1], file=f)
+                        print("Avg Case 2 or 3 Predictions: ", means[2], file=f)
 
-		print("\n-----Settings-----", file=f)
+                for j in range(len(f1_kfold)):
+                        print("\nFold "+str(j+1)+": ", file=f)    
+                        print("F1: ", f1_kfold[j], file=f)
+                        print("Precision: ", precision_kfold[j],file=f)
+                        print("Recall: ", recall_kfold[j],file=f)      
+                        print("Thresh: ", thresh_kfold[j],file=f)
+
+                        if filtering == "Y":                    
+                                print("\nFiltered F1: ", f1_filter_kfold[j], file=f)
+                                print("Filtered Precision: ", precision_kfold[j], file=f)
+                                print("Filtered Recall: ", recall_kfold[j], file=f)
+                                print("Filtered Thresh: ", thresh_kfold[j], file=f)
+                                print("\nCase 0 Predictions: ", error_types_kfold[j][0], file=f)
+                                print("Case 1 Predictions: ", error_types_kfold[j][1], file=f)
+                                print("Case 2 or 3 Predictions: ", error_types_kfold[j][2], file=f)
+
+                print("\n-----Settings-----", file=f)
 		print("Root: ", root, file=f)
 		print("Classifier: ", algo, file=f)
-		print("Sample Threshold: ", sample_threshold, file=f)
+                print("Sample Threshold: ", sample_threshold, file=f)
 		print("K-mer size: ", kmer, file=f)
-		print("Dataset: ", dataset, file=f)
+                print("Dataset: ", dataset, file=f)
 		print("Filtering: ", filtering, file=f)
-		print("Folds: ", folds, file=f)
 		print("\nTotal time: ", time()-time_start_all, file=f)
-		print("Script: ", sys.argv[0], file=f)
-		print("Taxonomy data: ", f1, file=f)
-		print("Sequence data: ", f2, file=f)
+                print("Script: ", sys.argv[0], file=f)
+                print("Taxonomy data: ", f1, file=f)
+                print("Sequence data: ", f2, file=f)
 		print("\nDONE!\n")
 
 

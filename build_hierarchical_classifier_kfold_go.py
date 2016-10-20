@@ -204,7 +204,7 @@ if __name__ == "__main__":
 		exit()
 	else:
 		time_start_all = time()
-		print("\nSTART")
+		print("\n=======START=======")
 		print("\nSettings:")
 		ont = sys.argv[1]
 		namespace = "cellular_component"
@@ -234,24 +234,25 @@ if __name__ == "__main__":
 		sample_threshold = int(sys.argv[4])
 		print("Sample threshold: ", sample_threshold)		
 
-
+		#dubious annotations - don't create classifiers for these
+		exclude_classes = ["GO:0005515","GO:0003674","GO:0008150","GO:0005575","GO:0005829","GO:0005737","GO:0005576","GO:0005886"]		
+		
 		#open the dataset files and create the dataset
-		print("\nStarting...")
-		print("Preparing the dataset")
+		print("\nPreparing the dataset")
 		data_list = list()
 		class_list = list()
 		id_list = list()
 
-		f = open("protein_records.csv","r")
-		reader = csv.reader(f)
-		data = np.array(list(reader))
-		data = data[data[:,4]==ont]
+		f = open("protein_records.json","r")
+		data = np.array(json.load(f))
 		f.close()
+		data = data[data[:,4]==ont]
+		if ont == "F":
+			data = data[data[:,1]!="GO:0005515"]
 		unique_proteins = list(set(data[:,0]))
 
-		f = open("pubmed_records.csv","r")
-		reader = csv.reader(f)
-		data2 = np.array(list(reader))
+		f = open("pubmed_records.json","r")
+		data2 = np.array(json.load(f))
 		f.close()
 		uniprot_pmids = list(set(data[:,2]))
 
@@ -352,6 +353,7 @@ if __name__ == "__main__":
 				X_train = data_list[train_start:train_end]
 				class_train = class_list[train_start:train_end]
 				id_train = id_list[train_start:train_end]
+				
 			else:
 				train_start = 0
 				train_end = test_start
@@ -365,10 +367,21 @@ if __name__ == "__main__":
 					X_train = data_list[train_start:train_end]+data_list[train_start2:train_end2]
 					class_train = class_list[train_start:train_end]+class_list[train_start2:train_end2]
 					id_train = id_list[train_start:train_end]+id_list[train_start2:train_end2]
-
+			
+			#Pubmed data: For CC and MF, use 50% of the data. For BP, use 1/3
+			if dataset[0]=="P":
+				if ont in ["C","F"]:
+					index = int(len(X_train)/2)
+                        	else:
+					index = int(len(X_train)/3)
+				X_train = X_train[:index] 
+                        	class_train = class_train[:index]
+                        	id_train = id_train[:index]
 			#remove duplicate papers
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test, dataset)
-		
+			
+			print("Train set: ", len(X_train))
+			print("Test set: ", len(X_test))
 			#vectorize features
 			vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 			X_train = vectorizer.fit_transform(X_train)
@@ -381,7 +394,7 @@ if __name__ == "__main__":
 			for node in go_ontology:
 				go_id = node['id']
 				children = get_children(go_id)
-				if (node['namespace'] == namespace and namespace != 'biological_process') or (namespace=='biological_process' and len(children)>=2) :
+				if go_id not in exclude_classes and ( (node['namespace'] == namespace and namespace != 'biological_process') or (namespace=='biological_process' and len(children)>=2) ):
 					descendants = get_descendants(go_id)
 					y_train = list()
 					for term in class_train:
@@ -436,18 +449,23 @@ if __name__ == "__main__":
 				thresh = float(thresh)/100
 				total_precision = 0
 				total_recall = 0
+				total_labelled = len(ids)
 				for id in ids:
 					positive_labels = list()
 					prob_ontology = prob_dict[id]
 					for key in classifiers.keys():
 						if prob_ontology[key] >= thresh:
 							positive_labels.append(key)
-					predicted_labels = propagate_go_terms(positive_labels)
-					precision,recall = evaluate_prediction(true_labels[id], predicted_labels)
-					total_precision+=precision
-					total_recall+=recall
-				final_precision = total_precision/len(ids)
-				final_recall = total_recall/len(ids)
+					positive_filtered = [p for p in positive_labels if p not in exclude_classes]
+					if len(positive_filtered)>0:
+						predicted_labels = propagate_go_terms(positive_labels)
+						precision,recall = evaluate_prediction(true_labels[id], predicted_labels)
+						total_precision+=precision
+						total_recall+=recall
+					else:
+						total_labelled-=1
+				final_precision = total_precision/total_labelled
+				final_recall = total_recall/total_labelled
 				final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
 				precision_list.append(final_precision)
 				recall_list.append(final_recall)

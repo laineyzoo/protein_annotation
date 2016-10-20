@@ -40,6 +40,18 @@ def create_kmers(sequence, k):
 	else:
 		return sequence
 
+
+#divide a sequence into kmers
+def create_kmers(sequence, k):
+	if k<len(sequence):
+		kmers = list()
+		for i in range(len(sequence)+1-k):
+			kmers.append(sequence[i:i+k])
+		seq = " ".join(k for k in kmers)
+		return seq
+	else:
+		return sequence
+
 #check if all elements of an array are equal
 def array_equal(arr):
 	return all(np.isclose(x, arr[0]) for x in arr)
@@ -148,18 +160,23 @@ def filter_prediction(pred_labels, idx, taxonomy):
 	return pred,error_type
 
 
-#compute leaf-level accuracy
+#compute leaf-level accuracy 
 def compute_accuracy(true_labels, pred_labels, taxonomy):
 	acc = 0
-	true_path_len = [path_to_root(x, taxonomy) for x in true_labels]
 	pred_path_len = [path_to_root(x, taxonomy) for x in pred_labels]
-	max_path = max(true_path_len)
-	true_leaf = true_labels[true_path_len.index(max_path)]
-	idx = np.where(np.array(pred_path_len)==max_path)[0]
-	pred_leaves = list(np.array(pred_labels)[idx])
-	if true_leaf in pred_leaves:
-		acc = 1
-	return acc
+	true_path_len = [path_to_root(x, taxonomy) for x in true_labels]
+	if max(true_path_len) == max(pred_path_len):
+		max_path = max(true_path_len)
+		true_leaf = true_labels[true_path_len.index(max_path)]
+		pred_leaf = pred_labels[pred_path_len.index(max_path)]
+		if true_leaf in pred_labels:
+			acc = 1
+	else:
+		true_leaf = true_labels[true_path_len.index(max(true_path_len))]
+		pred_leaf=pred_labels[pred_path_len.index(max(pred_path_len))]
+		acc = -1
+	return acc,true_leaf,pred_leaf
+
 
 #compute precision & recall for one test point
 def evaluate_prediction(true_labels, pred_labels):
@@ -259,83 +276,100 @@ if __name__ == "__main__":
 			f2 = open("silva_dict.json", "r")
 		
 
-taxonomy = json.load(f1)
-data_dict = json.load(f2)
+		taxonomy = json.load(f1)
+		data_dict = json.load(f2)
 
-#Only use the parts of the dataset that belongs to the root
-desc_root = taxonomy[root]["descendants"]
-print("Descendants: ", len(desc_root))
+		#Only use the parts of the dataset that belongs to the root
+		desc_root = taxonomy[root]["descendants"]
+		print("Descendants: ", len(desc_root))
 
-sequence_ids = list()
-sequence = list()
-classification = list()
+                sequence_ids = list()
+                sequence = list()
+                classification = list()
+		
+		keys = data_dict.keys()
+		for key in keys:
+				if data_dict[key]["class"][-1] in desc_root:
+						sequence_ids.append(key)
+						seq = create_kmers(data_dict[key]["sequence"],kmer)
+						sequence.append(seq)
+						classification.append(data_dict[key]["class"][-1])
 
-keys = data_dict.keys()
-for key in keys:
-		if data_dict[key]["class"][-1] in desc_root:
-				sequence_ids.append(key)
-				seq = create_kmers(data_dict[key]["sequence"],kmer)
-				sequence.append(seq)
-				classification.append(data_dict[key]["class"][-1])
 
+		#shuffle dataset
+		print("\nPreparing the dataset")
+		(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
 
-#shuffle dataset
-print("\nPreparing the dataset")
-(sequence, sequence_ids, classification) = shuffle_data(sequence, sequence_ids, classification)
+		#divide dataset
+		index = int(len(sequence_ids)/5)*4
 
-#divide dataset
-index = int(len(sequence_ids)/5)*4
+		X_train = sequence[:index]
+		sequence_ids_train = sequence_ids[:index]
+		classification_train = classification[:index]
 
-X_train = sequence[:index]
-sequence_ids_train = sequence_ids[:index]
-classification_train = classification[:index]
+		X_test_temp = sequence[index:]
+		sequence_ids_test_temp = sequence_ids[index:]
+		classification_test_temp = classification[index:]
+		
+		X_test = []
+		sequence_ids_test = []
+		classification_test = []
+		for i in range(len(X_test_temp)):
+			if classification_train.count(classification_test_temp[i])>=2:
+				X_test.append(X_test_temp[i])
+				sequence_ids_test.append(sequence_ids_test_temp[i])
+				classification_test.append(classification_test_temp[i])
 
-X_test = sequence[index:]
-sequence_ids_test = sequence_ids[index:]
-classification_test = classification[index:]
+		print("Train set: ", len(X_train))
+		print("Test set: ", len(X_test))
+	
+		#vectorize features
+		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
+		X_train = vectorizer.fit_transform(X_train)
+		X_test = vectorizer.transform(X_test)
 
-print("Train set: ", len(X_train))
-print("Test set: ", len(X_test))
-
-#vectorize features
-vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
-X_train = vectorizer.fit_transform(X_train)
-X_test = vectorizer.transform(X_test)
-
-#create binary classifiers
-print("Creating classifiers")
-time_start_classifier = time()
-classifiers = {}
-positive_count = {}
-for desc in desc_root:
-	descendants = taxonomy[desc]["descendants"]
-	y_train = list()
-	for c in classification_train:
-		if c in descendants:
-			y_train.append(1)
-		else:
-			y_train.append(0)
-	pos_count = y_train.count(1)
-	if pos_count>=sample_threshold:
-		if algo != "S" or pos_count==len(y_train):
-			clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
-			classifiers[desc] = clf
-		else:
-			clf = svm.SVC(probability=True)
-			clf.fit(X_train,y_train)
-			classifiers[desc] = clf
-		positive_count[desc] = pos_count
+		#create binary classifiers
+		print("Creating classifiers")
+		time_start_classifier = time()
+		classifiers = {}
+		positive_count = {}
+		true_species = []
+		pred_species = []
+		for desc in desc_root:
+			descendants = taxonomy[desc]["descendants"]
+			y_train = list()
+			for c in classification_train:
+				if c in descendants:
+					y_train.append(1)
+				else:
+					y_train.append(0)
+			pos_count = y_train.count(1)
+			if pos_count>=sample_threshold:
+				if algo != "S" or pos_count==len(y_train):
+					clf = MultinomialNB(alpha=.01).fit(X_train, y_train)
+					classifiers[desc] = clf
+				else:
+					clf = svm.SVC(probability=True)
+					clf.fit(X_train,y_train)
+					classifiers[desc] = clf
+				positive_count[desc] = pos_count
 		print("Done creating classifiers. No. of classifiers: ", len(classifiers))
 		time_end_classifier = time()-time_start_classifier
 
 		#run classifiers on the test set
 		print("Running classifiers on the test set")
-time_start_test = time()
-prob_dict = {}
-for i in range(len(sequence_ids_test)):
-	test_point = X_test[i]
-	prob_dict[sequence_ids_test[i]] = predict_class(test_point)
+		time_start_test = time()
+		prob_dict = {}
+		for i in range(len(sequence_ids_test)):
+			test_point = X_test[i]
+			prob_dict[sequence_ids_test[i]] = predict_class(test_point)
 		time_end_test = time()-time_start_test
+		
+		#print("Saving prob_dict to file...")
+		#fname = "results/prob_dict_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+".json"
+		#with open(fname, "w") as f:
+		#	json.dump(prob_dict,f)	
+		#	print("OK!")	
 	
 		#plot the precision/recall/f1 vs threshold
 		print("Calculating F1/recall/precision by threshold")
@@ -345,7 +379,8 @@ for i in range(len(sequence_ids_test)):
 		recall_list = []
 		acc_list = []
 		f1_list = []
-		
+		pred_species = []
+		true_species = []
 		if filtering == "Y":
 			results_filter_dict = {}
 			precision_filter_list = []
@@ -356,6 +391,7 @@ for i in range(len(sequence_ids_test)):
 
 		for thresh in range(0, 101):
 			thresh = float(thresh)/100
+			print("thresh: ", thresh)
 			total_precision = 0
 			total_recall = 0
 			total_acc = 0
@@ -363,6 +399,8 @@ for i in range(len(sequence_ids_test)):
 				total_precision_filter = 0
 				total_recall_filter = 0
                         	total_acc_filter = 0
+				classified_total_filter = 0
+				classified_total = 0
 				type_0 = 0
                         	type_1 = 0
 			for i in range(len(sequence_ids_test)):
@@ -379,41 +417,61 @@ for i in range(len(sequence_ids_test)):
 					elif error_type == 1:
 						type_1+=1
 					results_filter_dict[sequence_ids_test[i]] = {}
-                                	results_filter_dict[sequence_ids_test[i]]["true"]=true_labels
+					results_filter_dict[sequence_ids_test[i]]["true"]=true_labels
                                 	results_filter_dict[sequence_ids_test[i]]["predicted"]=filtered_labels
-					precision_filter,recall_filter,acc_filter = evaluate_prediction(true_labels, filtered_labels, desc_root)
-                                	total_precision_filter+=precision_filter
+					precision_filter,recall_filter = evaluate_prediction(true_labels, filtered_labels)
+                                	acc_filter,true_sp,pred_sp = compute_accuracy(true_labels, filtered_labels, taxonomy)
+					total_precision_filter+=precision_filter
                                 	total_recall_filter+=recall_filter
-					total_acc_filter+=acc_filter				
+					if acc_filter >= 0:
+						classified_total_filter+=1
+						total_acc_filter+=acc_filter				
 					
 				predicted_labels = propagate_labels(positive_labels,taxonomy)
 				results_dict[sequence_ids_test[i]] = {}
 				results_dict[sequence_ids_test[i]]["true"]=true_labels
 				results_dict[sequence_ids_test[i]]["predicted"]=predicted_labels
-				precision,recall,acc = evaluate_prediction(true_labels, predicted_labels, desc_root)
+				precision,recall = evaluate_prediction(true_labels, predicted_labels)
+				acc,true_sp,pred_sp = compute_accuracy(true_labels, predicted_labels, taxonomy)
 				total_precision+=precision
 				total_recall+=recall
-				total_acc+=acc
-			
+				if acc >= 0:
+					true_species.append(true_sp)
+					pred_species.append(pred_sp)
+					#print("True species: ", true_sp)
+					#print("Pred species: ", pred_sp)
+					classified_total+=1
+					total_acc+=acc
+		
+			#with open("results/results_no_filter_"+root+"_"+str(kmer)+"_"+str(thresh)+".json","w") as f:
+			#	json.dump(results_dict,f)
+			#with open("results/results_no_filter_true_species_"+root+"_"+str(kmer)+"_"+str(thresh)+".json","w") as f:			
+			#	json.dump(true_species,f)
+			#with open("results/results_no_filter_pred_species_"+root+"_"+str(kmer)+"_"+str(thresh)+".json","w") as f:				
+			#	json.dump(pred_species,f)		
+
 			if filtering == "Y":
                         	final_precision_filter = total_precision_filter/len(sequence_ids_test)
                         	final_recall_filter = total_recall_filter/len(sequence_ids_test)
-                        	final_acc_filter = total_acc_filter/len(sequence_ids_test)
+                        	final_acc_filter = total_acc_filter/classified_total_filter
 				final_f1_filter = (2*final_precision_filter*final_recall_filter)/(final_precision_filter+final_recall_filter)
                         	precision_filter_list.append(final_precision_filter)
                         	recall_filter_list.append(final_recall_filter)
 				acc_filter_list.append(final_acc_filter)
                         	f1_filter_list.append(final_f1_filter)							
 				error_types.append([type_0, type_1])
-
+			
 			final_precision = total_precision/len(sequence_ids_test)
 			final_recall = total_recall/len(sequence_ids_test)
-			final_acc = total_acc/len(sequence_ids_test)
+			final_acc = total_acc/classified_total
 			final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
 			precision_list.append(final_precision)
 			recall_list.append(final_recall)
 			acc_list.append(final_acc)
 			f1_list.append(final_f1)
+			print("Classified total: ", classified_total)
+			print("Total accuracy: ", total_acc)
+			print("Final accuracy: ", final_acc)			
 
 		if filtering == "Y":
                 	max_f1_filter = max(f1_filter_list)
@@ -424,12 +482,16 @@ for i in range(len(sequence_ids_test)):
 			max_type_0 = error_types[max_thresh_filter][0]
 			max_type_1 = error_types[max_thresh_filter][1]
 			max_type_n = len(sequence_ids_test)-(max_type_1+max_type_0)			
+			best_acc_filter =max(acc_filter_list)
+			best_acc_filter_thresh = acc_filter_list.index(best_acc_filter)			
 
 		max_f1 = max(f1_list)
 		max_thresh = f1_list.index(max_f1)
 		max_precision = precision_list[max_thresh]
 		max_recall = recall_list[max_thresh]
 		max_acc = acc_list[max_thresh]
+		best_acc = max(acc_list)
+		best_acc_thresh = acc_list.index(best_acc)
 		time_end_eval = time()-time_start_eval
 		time_end_all = time()-time_start_all
 			
@@ -440,6 +502,8 @@ for i in range(len(sequence_ids_test)):
 		print("Max Recall: ", max_recall)
 		print("Max Accuracy: ", max_acc)
 		print("Max Threshold: ", max_thresh)
+		print("Best Accuracy: ", best_acc)
+		print("Best Accuracy Thresh: ", best_acc_thresh)		
 
 		if filtering == "Y":
                 	print("\nFiltered Max F1: ", max_f1_filter)
@@ -447,7 +511,9 @@ for i in range(len(sequence_ids_test)):
                 	print("Filtered Max Recall: ", max_recall_filter)
                 	print("Filtered Max Accuracy: ", max_acc_filter)
 			print("Filtered Max Threshold: ", max_thresh_filter)		
-			
+			print("Filtered Best Accuracy: ", best_acc_filter)
+			print("Filtered Best Accuracy Thresh: ", best_acc_filter_thresh)			
+
 			print("\nType 0 predictions: ", max_type_0)
 			print("Type 1 predictions: ", max_type_1)			
 			print("Type 2 or 3 predictions: ", max_type_n)			
@@ -476,12 +542,12 @@ for i in range(len(sequence_ids_test)):
                 print("Taxonomy data: ", f1)
                 print("Sequence data: ", f2)
 		print("Saving results_dict to file...")
-		with open("results/results_no_filter"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".json","w") as f:
+		with open("results/results_no_filter"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+".json","w") as f:
 			json.dump(results_dict, f)
 			print("OK!")
 		if filtering =="Y":
 			print("Saving results_filter_dict to file...")
-			with open("results/results_filter_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+"_"+filtering+".json","w") as f:
+			with open("results/results_filter_"+root+"_"+str(kmer)+"_"+str(sample_threshold)+"_"+algo+"_"+dataset+".json","w") as f:
                         	json.dump(results_filter_dict, f)
                         	print("OK!")
 		#print("Saving vectorizer to file...")
@@ -539,21 +605,5 @@ for i in range(len(sequence_ids_test)):
 		print("Taxonomy data: ", f1, file=f)
 		print("Sequence data: ", f2, file=f)
 		print("DONE!\n")
-
-
-true_labels = []
-pred_labels = []
-for i in range(len(sequence_ids_test)):
-	true_labels.append(propagate_labels([classification_test[i]],taxonomy))
-	prob_ontology = prob_dict[sequence_ids_test[i]]
-	positive_labels = list()
-	for key in classifiers.keys():
-		if prob_ontology[key] >= 0.99:
-			positive_labels.append(key)
-	pred_labels.append(propagate_labels(positive_labels,taxonomy))
-
-
-
-
 
 

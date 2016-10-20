@@ -214,6 +214,8 @@ if __name__ == "__main__":
 		dataset = sys.argv[2]
 		if dataset=="U":
 			print("Dataset: Uniprot abstracts")
+		elif dataset=="U2":
+			print("Train set: Uniprot\nTest set: Human-associated proteins w/ Uniprot abstract")
 		elif dataset=="P1":
 			print("Dataset: PubMed papers w/ GO names")
 		elif dataset=="P2":
@@ -222,8 +224,6 @@ if __name__ == "__main__":
 			print("Dataset: PubMed papers w/ GO names - intersection w/ Uniprot")
 		elif dataset=="P4":
 			print("Dataset: PubMed papers w/ gene names - intersection w/ Uniprot")
-		elif dataset=="U2":
-			print("Train set: Uniprot Test set: Human-associated proteins w/ Uniprot abstract")
 
 
 		algo = sys.argv[3]
@@ -248,28 +248,29 @@ if __name__ == "__main__":
 		data = np.array(list(reader))
 		data = data[data[:,4]==ont]
 		f.close()
-		unique_proteins = list(set(data[:,0]))
 
 		f = open("pubmed_records.csv","r")
 		reader = csv.reader(f)
 		data2 = np.array(list(reader))
 		f.close()
+
+		unique_proteins = list(set(data[:,0]))
 		uniprot_pmids = list(set(data[:,2]))
 
 		#dataset: UniProt abstracts
-		if dataset in ["U", "U2"]:
+		if dataset in ["U","U2"]:
 			for pmid in uniprot_pmids:
 				matching_pub = data2[data2[:,1]==pmid]
 				matching_proteins = data[data[:,2]==pmid]
 				text = matching_pub[0][4]
 				text = text_preprocessing(text)
-				go_terms_protein = list(set(matching_proteins[:,1]))
-				for term in go_terms_protein:
+				go_terms = list(set(matching_proteins[:,1]))
+				for term in go_terms:
 					data_list.append(text)
 					class_list.append(term)
 					id_list.append(pmid)
-		
-		#dataset: PubMed papers 
+
+		#dataset: PubMed papers
 		else:
 			
 			if dataset == "P1" or dataset == "P3":
@@ -330,36 +331,27 @@ if __name__ == "__main__":
 		#shuffle dataset
 		(data_list, class_list, id_list) = shuffle_data(data_list, class_list, id_list)
 		#divide dataset
-		if dataset == "U":
+		if dataset in ["U","U2"]:
 			index = int(len(data_list)/5)*4
 			X_train = data_list[:index]
 			class_train = class_list[:index]
 			id_train = id_list[:index]
-			
+
 			X_test = data_list[index:]
 			class_test = class_list[index:]
 			id_test = id_list[index:]
-			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
-
-		elif dataset == "U2":
 			
-			X_train = data_list
-			class_train = class_list
-			id_train = id_list
-			
-			f = open("protein_human_records.json","r")
-			human = np.array(json.load(f))
-			human = human[human[:,2]!="IEA"]
-			human_id = human[:,0]
-			human_id = list(set(human_id))
-			id_test = set(human_id) & set(id_train)
-			class_test = []
-			X_test = []
-			for i in id_test:
-				class_test.append(class_train[id_train.index(i)])
-				X_test.append(X_train[id_train.index(i)])
+			if dataset == "U2":
+				f = open("protein_human_records.json","r")
+				human = np.array(json.load(f))
+				human = human[human[:,2]!="IEA"]
+				human_label = human[:,1]
+				for i in reversed(range(len(X_test))):
+					if class_test[i] not in human_label:
+						del X_test[i]
+						del class_test[i]
+						del id_test[i]
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
-
 			print("Train set: ", len(X_train))
 			print("Test set: ", len(X_test))
 		else:
@@ -396,13 +388,11 @@ if __name__ == "__main__":
 			(X_test, class_test, id_test) = shuffle_data(X_test, class_test, id_test)
 			#remove papers from the test set that also appears in the train set
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
-
 		#vectorize features
 		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 		X_train = vectorizer.fit_transform(X_train)
 		X_test = vectorizer.transform(X_test)
 		
-
 		#create binary classifiers
 		print("Creating classifiers")
 		time_start_classifier = time()

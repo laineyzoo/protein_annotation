@@ -236,22 +236,22 @@ if __name__ == "__main__":
 
 		time_start_all = time()
 		#open the dataset files and create the dataset
-		print("\nStarting...")
-		print("Preparing the dataset")
+		print("\nPreparing the dataset")
 		data_list = list()
 		class_list = list()
 		id_list = list()
 
-		f = open("protein_records.csv","r")
-		reader = csv.reader(f)
-		data = np.array(list(reader))
-		data = data[data[:,4]==ont]
+		f = open("protein_records.json","r")
+		data = np.array(json.load(f))
 		f.close()
+		data = data[data[:,4]==ont]
+		#remove GO:0005515 (protein binding) from dataset
+		if ont == "F":
+			data = data[data[:,1]!="GO:0005515"]
 		unique_proteins = list(set(data[:,0]))
 
-                f = open("pubmed_records.csv","r")
-                reader = csv.reader(f)
-                data2 = np.array(list(reader))
+                f = open("pubmed_records.json","r")
+                data2 = np.array(json.load(f))
                 f.close()
                 uniprot_pmids = list(set(data[:,2]))
 
@@ -340,21 +340,17 @@ if __name__ == "__main__":
 			id_test = id_list[index:]
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
 		else:
-			#for pubmed data, take only 50% for training
-			index = int(len(data_list)/2)
+			#P3 data for CC and MF, take only 50% for training. P4 data and  BP, take only 1/3
+			if dataset == "P3" and ont in ["C","F"]:
+				index = int(len(data_list)/2)
+			else:
+				index = int(len(data_list)/3)
 			X_train = data_list[:index]
 			class_train = class_list[:index]
 			id_train = id_list[:index]
 			#prepare test set
-			f = open("protein_records.csv","r")
-			reader = csv.reader(f)
-			test_data = np.array(list(reader))
-			test_data = test_data[test_data[:,4]==ont]
-			f.close()
-			f = open("pubmed_records.csv","r")
-			reader = csv.reader(f)
-			test_data2 = np.array(list(reader))
-			f.close()
+			test_data = data
+			test_data2 = data2
 			pmids_test = list(set(test_data[:,2]))
 			X_test = list()
 			class_test = list()
@@ -373,13 +369,15 @@ if __name__ == "__main__":
 			(X_test, class_test, id_test) = shuffle_data(X_test, class_test, id_test)
 			#remove papers from the test set that also appears in the train set
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test)
+		
+		print("Train set: ", len(X_train))
+		print("Test set: ", len(X_test))
 
 		#vectorize features
 		vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 		X_train = vectorizer.fit_transform(X_train)
 		X_test = vectorizer.transform(X_test)
 		
-
 		#create binary classifiers
 		print("Creating classifiers")
 		time_start_classifier = time()
@@ -430,12 +428,6 @@ if __name__ == "__main__":
 			json.dump(prob_dict, f)		
                         print("OK!")
 			f.close()
-		#print("Saving positive_count dict...")
-		#fname = "positive_count_"+ont+"_"+dataset+"_"+algo+"_"+sample_threshold+".json"
-		#with open(fname, "w") as f:
-		#	json.dump(positive_count, f)
-		#	print("OK!")
-		#	f.close()
 	
 		print("Calculate F1/recall/precision by threshold")
 		time_start_eval = time()
@@ -449,22 +441,33 @@ if __name__ == "__main__":
 			thresh = r/100
 			total_precision = 0
 			total_recall = 0
+			total_labelled = len(ids)
+			results_dict = {}
 			for i in ids:
 				positive_labels = list()
 				prob_ontology = prob_dict[i]
 				for key in classifiers.keys():
 					if prob_ontology[key] >= thresh:
 						positive_labels.append(key)
-				predicted_labels = propagate_go_terms(positive_labels)
-				precision,recall = evaluate_prediction(true_labels[i], predicted_labels)
-				total_precision+=precision
-				total_recall+=recall
-			final_precision = total_precision/len(ids)
-			final_recall = total_recall/len(ids)
+				results_dict[i]={}
+				results_dict[i]["predicted"] = positive_labels
+				results_dict[i]["true"] = true_labels
+				positive_filtered = [p for p in positive_labels if p not in exclude_classes]		
+				if len(positive_filtered)>0:	
+					predicted_labels = propagate_go_terms(positive_filtered)
+					precision,recall = evaluate_prediction(true_labels[i], predicted_labels)
+					total_precision+=precision
+					total_recall+=recall
+				else:
+					total_labelled-=1
+			final_precision = total_precision/total_labelled
+			final_recall = total_recall/total_labelled
 			final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
 			precision_list.append(final_precision)
 			recall_list.append(final_recall)
 			f1_list.append(final_f1)
+			with open("results/results_dict_GO_"+ont+"_"+dataset+"_"+algo+"_"+str(thresh)+".json","w") as f:
+				json.dump(results_dict, f)
 		max_f1 = max(f1_list)
 		max_thresh = f1_list.index(max_f1)
 		max_precision = precision_list[max_thresh]

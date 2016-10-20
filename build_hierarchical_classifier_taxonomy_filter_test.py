@@ -40,6 +40,18 @@ def create_kmers(sequence, k):
 	else:
 		return sequence
 
+
+#divide a sequence into kmers
+def create_kmers(sequence, k):
+	if k<len(sequence):
+		kmers = list()
+		for i in range(len(sequence)+1-k):
+			kmers.append(sequence[i:i+k])
+		seq = " ".join(k for k in kmers)
+		return seq
+	else:
+		return sequence
+
 #check if all elements of an array are equal
 def array_equal(arr):
 	return all(np.isclose(x, arr[0]) for x in arr)
@@ -558,4 +570,5 @@ if __name__ == "__main__":
 		print("Taxonomy data: ", f1, file=f)
 		print("Sequence data: ", f2, file=f)
 		print("DONE!\n")
+
 

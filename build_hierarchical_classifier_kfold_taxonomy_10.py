@@ -226,7 +226,7 @@ if __name__ == "__main__":
 		print("This script requires 7 arguments: root, kmer size, sample_threshold, classifier, dataset, filtering, no. of folds")
 	else:
 		time_start_all = time()
-		print("\n=====START N-fold Cross-validation=====\n")
+		print("\n=====START 5-fold Cross-validation=====\n")
 		print("Settings: ")
 
 		root = sys.argv[1]
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 			thresh_acc_filter_kfold = []
 			error_types_kfold = []
 		for fold in range(folds):
-			print("Fold ", (fold+1))
+			print("Fold ", (f+1))
 			test_start = int(fold*div)
 			test_end = int((fold+1)*div)
 			
@@ -572,39 +572,39 @@ if __name__ == "__main__":
 		print("Avg Accuracy: ", np.mean(np.array(acc_kfold)),file=f)
 		print("Avg Accuracy Thresh: ", np.mean(np.array(thresh_acc_kfold)), file=f)
 		
-		if filtering == "Y":
-			print("\nAvg Filtered F1: ", np.mean(np.array(f1_filter_kfold)), file=f)
-			print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)), file=f)
-			print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)), file=f)
-			print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)), file=f)
-			print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)), file=f)
-			print("Avg Filtered Accuracy Thresh: ", np.mean(np.array(thresh_acc_filter_kfold)), file=f)
-			means = np.mean(np.array(error_types_kfold), axis=0)
-			print("\nAvg Case 0 Predictions: ", means[0], file=f)
-			print("Avg Case 1 Predictions: ", means[1], file=f)
-			print("Avg Case 2 or 3 Predictions: ", means[2], file=f)
+			if filtering == "Y":
+				print("\nAvg Filtered F1: ", np.mean(np.array(f1_filter_kfold)), file=f)
+				print("Avg Filtered Precision: ", np.mean(np.array(precision_filter_kfold)), file=f)
+				print("Avg Filtered Recall: ", np.mean(np.array(recall_filter_kfold)), file=f)
+				print("Avg Filtered Threshold: ", np.mean(np.array(thresh_filter_kfold)), file=f)
+				print("Avg Filtered Accuracy: ", np.mean(np.array(acc_filter_kfold)), file=f)
+				print("Avg Filtered Accuracy Thresh: ", np.mean(np.array(thresh_acc_filter_kfold)), file=f)
+				means = np.mean(np.array(error_types_kfold), axis=0)
+				print("\nAvg Case 0 Predictions: ", means[0], file=f)
+				print("Avg Case 1 Predictions: ", means[1], file=f)
+				print("Avg Case 2 or 3 Predictions: ", means[2], file=f)
 
-		for j in range(len(f1_kfold)):
-			print("\nFold "+str(j+1)+": ", file=f)
-			print("Train size: ", train_size_kfold[j], file=f)
-			print("Test size: ", test_size_kfold[j], file=f)
-			print("F1: ", f1_kfold[j], file=f)
-			print("Precision: ", precision_kfold[j],file=f)
-			print("Recall: ", recall_kfold[j],file=f)      
-			print("Thresh: ", thresh_kfold[j],file=f)
-			print("Acc: ", acc_kfold[j], file=f)
-			print("Acc Thresh: ", thresh_acc_kfold[j], file=f)
+			for j in range(len(f1_kfold)):
+				print("\nFold "+str(j+1)+": ", file=f)
+				print("Train size: ", train_size_kfold[j], file=f)
+				print("Test size: ", test_size_kfold[j], file=f)
+				print("F1: ", f1_kfold[j], file=f)
+				print("Precision: ", precision_kfold[j],file=f)
+				print("Recall: ", recall_kfold[j],file=f)      
+				print("Thresh: ", thresh_kfold[j],file=f)
+				print("Acc: ", acc_kfold[j], file=f)
+				print("Acc Thresh: ", thresh_acc_kfold[j], file=f)
 				
-			if filtering == "Y":                    
-				print("\nFiltered F1: ", f1_filter_kfold[j], file=f)
-				print("Filtered Precision: ", precision_kfold[j], file=f)
-				print("Filtered Recall: ", recall_kfold[j], file=f)
-				print("Filtered Thresh: ", thresh_kfold[j], file=f)
-				print("Filtered Acc: ", acc_filter_kfold[j], file=f)
-				print("Filtered Acc Thresh: ", thresh_acc_filter_kfold[j], file=f)
-				print("\nCase 0 Predictions: ", error_types_kfold[j][0], file=f)
-				print("Case 1 Predictions: ", error_types_kfold[j][1], file=f)
-				print("Case 2 or 3 Predictions: ", error_types_kfold[j][2], file=f)
+				if filtering == "Y":                    
+					print("\nFiltered F1: ", f1_filter_kfold[j], file=f)
+					print("Filtered Precision: ", precision_kfold[j], file=f)
+					print("Filtered Recall: ", recall_kfold[j], file=f)
+					print("Filtered Thresh: ", thresh_kfold[j], file=f)
+					print("Filtered Acc: ", acc_filter_kfold[j], file=f)
+					print("Filtered Acc Thresh: ", thresh_acc_filter_kfold[j], file=f)
+					print("\nCase 0 Predictions: ", error_types_kfold[j][0], file=f)
+					print("Case 1 Predictions: ", error_types_kfold[j][1], file=f)
+					print("Case 2 or 3 Predictions: ", error_types_kfold[j][2], file=f)
 
 		print("\n-----Settings-----", file=f)
 		print("Root: ", root, file=f)

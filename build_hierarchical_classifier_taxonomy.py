@@ -332,4 +332,22 @@ if __name__ == "__main__":
 		print("Sequence data: ", f2, file=f)
 		print("\nDONE!")
 
+abridge_keys = []
+for ab in abridge:
+	idx = ab.index(".")
+	key = ab[:idx]
+	abridge_keys.append(key)
+
+silva_short_keys = []
+for key in silva_keys:
+	idx = key.index(".")
+	short_key = key[:idx]
+	silva_short_keys.append(short_key)
+
+silva_dict_abridge = {}
+for ab in abridge_keys:
+	if ab in silva_short_keys:
+		idx = silva_short_keys.index(ab)
+		silva_dict_abridge[silva_keys[idx]] = silva[silva_keys[idx]]
+
 
