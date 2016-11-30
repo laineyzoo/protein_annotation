@@ -10,9 +10,13 @@ import re
 import sys, getopt
 from time import time
 
+#from nltk.corpus import stopwords
+#from nltk import PorterStemmer
 from stemming.porter2 import stem
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn import svm
 
 #list of stopwords
 f = open("english")
@@ -92,6 +96,17 @@ def remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, data
 			#print("Test paper appears in train set")
 			indexes = list(np.where(pmids_test_array==test_point)[0])
 			delete_indexes.extend(indexes)
+	#no need for unique protein checking for Pubmed dataset
+#	if dataset == "U":
+#		for protein in unique_proteins:
+#			#get the pubmed ids of papers associated with this protein
+#			matching_records = data[data[:,0]==protein]
+#			matching_pmids = list(set(matching_records[:,2]))
+#			for pmid in matching_pmids:
+#				if pmid in pmids_train and pmid in pmids_test:
+#					indexes = list(np.where(pmids_test_array==pmid)[0])
+#					delete_indexes.extend(indexes)
+	#delete the datapoints from the test set meeting the above two conditions
 	delete_indexes = list(set(delete_indexes))
 	print("Papers to delete: ", len(delete_indexes))
 	for loc in sorted(delete_indexes, reverse=True):
@@ -158,7 +173,7 @@ def predict_go(test_point):
 if __name__ == "__main__":
 	
 	if len(sys.argv[1:]) < 6:
-		print("This script requires at least 6 arguments: ontology, dataset, classifier type, sample threshold, no. of folds, save_results")
+		print("This script requires at least 6 arguments: ontology, dataset, sample threshold, no. of folds, save_results, best_thresh")
 		exit()
 	else:
 		time_start_all = time()
@@ -174,85 +189,99 @@ if __name__ == "__main__":
 
 		dataset = sys.argv[2]
 		if dataset=="U":
-			print("Train set: Uniprot abstracts \nTest set: Uniprot abstracts")
+			print("Train set: Uniprot abstracts")
+			print("Test set: Uniprot abstracts")
 		elif dataset == "H1":
 			print("Train set: Uniprot")
 			print("Test set: human proteins")
 		elif dataset == "H2":
-			print("Train set: human proteins")
+			print("Train set: Uniprot human proteins")
 			print("Test set: human proteins")
 		elif dataset == "Y1":
                         print("Train set: Uniprot")
                         print("Test set: yeast proteins")	
 		elif dataset == "Y2":
-                        print("Train set: yeast proteins")
+                        print("Train set: Uniprot yeast proteins")
                         print("Test set: yeast proteins")		
 		elif dataset == "P3":
-			print("Dataset: PubMed papers w/ GO names AND Uniprot")
-		elif dataset=="P4":
-			print("Dataset: PubMed papers w/ gene names AND Uniprot")
+			print("Train set: PubMed papers w/ GO names AND Uniprot")
+			print("Test set: All Uniprot")
+		elif dataset == "P4":
+			print("Train set: PubMed papers w/ gene names AND Uniprot")
+			print("Test set: All Uniprot")
 		else:
 			print("Invalid dataset. Valid datasets are U, H1, H2, Y1, Y2, P3 and P4. Exiting...")
 			exit()
 
-		algo = sys.argv[3]
-		if algo != "S":
-			print("Classifier: Naive Bayes")
-		else:
-			print("Classifier: SVM")
 	
-		sample_threshold = int(sys.argv[4])
+		sample_threshold = int(sys.argv[3])
 		print("Sample threshold: ", sample_threshold)		
 		
-		folds = int(sys.argv[5])
+		folds = int(sys.argv[4])
 		print("Folds: ", folds)
 		
-		save_results = sys.argv[6]
+		save_results = sys.argv[5]
 		print("Save results? ", save_results)
+		
+		best_thresh = int(sys.argv[6])
+		print("Best threshold: ", best_thresh)
 
 		#open the dataset files and create the dataset
 		print("\nPreparing the dataset")
 
-f = open("protein_records.json","r")
-data = np.array(json.load(f))
-f.close()
-data = data[data[:,4]==ont]
-if ont == "F":
-	data = data[data[:,1]!="GO:0005515"]
-unique_proteins = list(set(data[:,0]))
-uniprot_go_terms = list(set(data[:,1]))
-uniprot_pmids = list(set(data[:,2]))
+		f = open("protein_records.json","r")
+		data = np.array(json.load(f))
+		f.close()
+		data = data[data[:,4]==ont]
+		if ont == "F":
+			data = data[data[:,1]!="GO:0005515"]
+		unique_proteins = list(set(data[:,0]))
+		uniprot_go_terms = list(set(data[:,1]))
+		uniprot_pmids = list(set(data[:,2]))
+		
+		f = open("pubmed_records.json","r")
+		data2 = json.load(f)
 
-f = open("pubmed_records.json","r")
-data2 = json.load(f)
-allowed_go_terms = go_parents.keys()
+		allowed_go_terms = go_parents.keys()
 
-if dataset[0] == "H":
-	f = open("protein_human_records.json","r")
-	human = np.array(json.load(f))
-	human = human[human[:,2]!="IEA"]
-	human_ids= list(set(human[:,0]))
-	f = open("protein_yeast_records.json","r")
-	yeast = np.array(json.load(f))
-	yeast = yeast[yeast[:,2]!="IEA"]
-	yeast_ids = list(set(yeast[:,0]))
+		if dataset[0] in ["H","Y"]:
+			valid_go_terms = []
+			f = open("protein_human_records.json","r")
+			human = np.array(json.load(f))
+			human = human[human[:,2]!="IEA"]
+			human_ids= list(set(human[:,0]))
+			human_go_terms = list(set(human[:,1]))
+			f = open("protein_yeast_records.json","r")
+			yeast = np.array(json.load(f))
+			yeast = yeast[yeast[:,2]!="IEA"]
+			yeast_ids = list(set(yeast[:,0]))
+			yeast_go_terms = list(set(yeast[:,1]))
+			
+			unique_go_terms = list(set(human_go_terms+yeast_go_terms))
+			valid_go_terms = []
+			for term in unique_go_terms:
+				h = human[human[:,1]==term]
+				y = yeast[yeast[:,1]==term]
+				if len(h)+len(y)>=10:
+					valid_go_terms.append(term)
+			valid_go_terms = list(set(valid_go_terms))
 
-data_list = list()
-class_list = list()
-id_list = list()
 
-if dataset == "U":
-#dataset: UniProt abstracts
-for pmid in uniprot_pmids:
-	text = text_preprocessing(data2[pmid])
-	matching_proteins = data[data[:,2]==pmid]
-	protein_ids = list(set(matching_proteins[:,0]))
-	go_terms_protein = list(set(matching_proteins[:,1]))
-	for term in go_terms_protein:
-		if (dataset not in ["H2","Y2"] and term in allowed_go_terms) or (dataset=="H2" and len(set(protein_ids)&set(human_ids))>0 and term in allowed_go_terms) or (dataset=="Y2" and len(set(protein_ids)&set(yeast_ids))>0 and term in allowed_go_terms):
-			data_list.append(text)
-			class_list.append(term)
-			id_list.append(pmid)
+		data_list = list()
+		class_list = list()
+		id_list = list()
+
+		#dataset: UniProt abstracts
+		for pmid in uniprot_pmids:
+			text = text_preprocessing(data2[pmid])
+			matching_proteins = data[data[:,2]==pmid]
+			protein_ids = list(set(matching_proteins[:,0]))
+			go_terms_protein = list(set(matching_proteins[:,1]))
+			for term in go_terms_protein:
+				if (dataset not in ["H2","Y2"] and term in allowed_go_terms) or (dataset=="H2" and len(set(protein_ids)&set(human_ids))>0 and term in allowed_go_terms) or (dataset=="Y2" and len(set(protein_ids)&set(yeast_ids))>0 and term in allowed_go_terms):
+					data_list.append(text)
+					class_list.append(term)
+					id_list.append(pmid)
 
 		#dataset: Pubmed papers
 		if dataset[0] == "P":
@@ -262,8 +291,8 @@ for pmid in uniprot_pmids:
 			uniprot_id_list = id_list
 			
 			if dataset == "P3":
-				fname1 = "pubmed_go_names_papers_dict.json"
-				fname2 = "pubmed_go_names_papers.json"
+				fname1 = "pubmed_go_names_papers_dict_2.json"
+				fname2 = "pubmed_go_names_papers_2.json"
 			else:
 				fname1 = "pubmed_gene_names_papers_dict.json"
 				fname2 = "pubmed_gene_names_papers.json"
@@ -323,6 +352,7 @@ for pmid in uniprot_pmids:
 		recall_trunc_kfold = []
 		f1_trunc_kfold = []
 		thresh_trunc_kfold = []
+		file_to_write = {}
 		for fold  in range(folds):
 			print("Fold ", (fold+1))
 			test_start = int(fold*div)
@@ -353,14 +383,19 @@ for pmid in uniprot_pmids:
 					id_train = id_list[train_start:train_end]+id_list[train_start2:train_end2]
 			
 			#For CC and MF P3, use 50% of the data. For BP and P4 use 1/5
+			fraction_train_data = 1
+			fraction_test_data = 1
 			if dataset[0] == "P":
 				if dataset[0]=="P3" and ont in ["C","F"]:
-					index = int(len(X_train)/2)
+					index = int(len(X_train)/fraction_train_data)
 				else:
-					index = int(len(X_train)/5)
+					fraction_train_data = 1
+					index = int(len(X_train)/fraction_train_data)
 					if ont == "P":
-						index = int(len(X_train)/10)
-                                        	index_test = int(len(X_test)/10)
+						fraction_train_data = 2
+						index = int(len(X_train)/fraction_train_data)
+                                        	fraction_test_data = 5
+						index_test = int(len(X_test)/fraction_test_data)
                                         	X_test = X_test[:index_test]
                                         	class_test = class_test[:index_test]
                                         	id_test = id_test[:index_test]
@@ -372,7 +407,9 @@ for pmid in uniprot_pmids:
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test, dataset)
 
 			print("Train set: ", len(X_train))
+			print("Fraction train data: ", fraction_train_data)
 			print("Test set: ", len(X_test))
+			print("Fraction test data: ", fraction_test_data)
 			#vectorize features
 			vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 			X_train = vectorizer.fit_transform(X_train)
@@ -384,10 +421,9 @@ for pmid in uniprot_pmids:
 			classifier_keys = []
 			for node in go_ontology:
 				go_id = node['id']
-				children = get_children(go_id)
-				if node['namespace'] == namespace:
+				if (node['namespace'] == namespace and dataset[0] not in ["H","Y"]) or (node['namespace'] == namespace and dataset[0] in ["H","Y"] and go_id in valid_go_terms):
 					descendants = get_descendants(go_id)
-					y_train = list()
+					y_train = []
 					for term in class_train:
 						if term in descendants:
 							y_train.append(1)
@@ -401,38 +437,25 @@ for pmid in uniprot_pmids:
 			print("Done creating classifiers. Classifier count: ", len(classifiers))
 
 			#consolidate test set papers with more than 1 GO label
-			id_test_dict = {}
-			X_test_unique = []
+			test_dict = {}
 			for i in range(len(id_test)):
-				if dataset in ["U","H2","Y2"]:
-					if id_test[i] not in id_test_dict.keys():
-						id_test_dict[id_test[i]] = []
-						X_test_unique.append(X_test[i])
-					id_test_dict[id_test[i]].append(class_test[i])
-				elif dataset[0] == "P":
-					#for Pubmed datasets, only test Uniprot papers
-					if id_test[i] in uniprot_pmids:
-						if id_test[i] not in id_test_dict.keys():
-							id_test_dict[id_test[i]] = []
-							X_test_unique.append(X_test[i])
-						id_test_dict[id_test[i]].append(class_test[i])
-				elif dataset in ["H1","Y1"]:
-					#for human/yeast data, only test papers w/ human/yeast-related GO annotations
-					matching_proteins = data[data[:,2]==id_test[i]]
-                        		protein_ids = list(set(matching_proteins[:,0]))
-					if (dataset == "H1" and len(set(protein_ids) & set(human_ids))>0) or (dataset == "Y1" and len(set(protein_ids) & set(yeast_ids))>0):
-						if id_test[i] not in id_test_dict.keys():
-							id_test_dict[id_test[i]] = []
-							X_test_unique.append(X_test[i])
-						id_test_dict[id_test[i]].append(class_test[i])
-
+				if id_test[i] not in test_dict.keys():
+					test_dict[id_test[i]] = {}
+					test_dict[id_test[i]]["X"] = X_test[i]
+					test_dict[id_test[i]]["y"] = []
+				if id_test[i] not in file_to_write.keys():
+					file_to_write[id_test[i]] = []
+				test_dict[id_test[i]]["y"].append(class_test[i])		
+	
 			print("Running the classifiers on the test set")
+			time_start_test = time()
 			prob_dict = {}
-			ids = id_test_dict.keys()
+			ids = test_dict.keys()
 			for i in range(len(ids)):
-				test_point = X_test_unique[i]
+				test_point = test_dict[ids[i]]["X"]
 				prob_dict[ids[i]] = predict_go(test_point)
-
+			time_end_test = time()-time_start_test		
+	
 			print("Calculate F1/recall/precision by threshold")
 			precision_list = []
 			recall_list = []
@@ -451,14 +474,14 @@ for pmid in uniprot_pmids:
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys+["GO:0008150"]))
 				else:
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys))
-				true_labels_trunc[i] = trunc_labels
+				true_labels_trunc[i] = propagate_go_terms(trunc_labels)
 			if save_results == "Y":
-				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_"+algo+"_full.json","w") as f:
+				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_full.json","w") as f:
 					json.dump(true_labels, f)
-				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_"+algo+"_trunc.json","w") as f:
+				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_trunc.json","w") as f:
 					json.dump(trunc_labels,f)
-			for thresh in range(0,101):
-				thresh = float(thresh)/100
+			for t in range(0,101):
+				thresh = float(t)/100
 				total_precision = 0
 				total_recall = 0
 				total_precision_trunc = 0
@@ -468,6 +491,10 @@ for pmid in uniprot_pmids:
 					all_labels = np.array(classifier_keys)
 					all_prob = np.array(prob_dict[i])
 					positive_labels = list(all_labels[all_prob[:]>=thresh])
+					if t == best_thresh:
+						file_to_write[i] = zip(all_labels,all_prob)
+						with open("GO_prob_labels_"+ont+"_"+dataset+".json","w") as f:
+							json.load(file_to_write,f)
 					positive_filtered = [p for p in positive_labels if p not in exclude_classes]
 					predicted_labels = propagate_go_terms(positive_filtered)
 					if save_results=="Y" and fold == 0:
@@ -548,10 +575,10 @@ for pmid in uniprot_pmids:
 		print("\n-----Settings-----")
 		print("Ontology: ", ont)
 		print("Dataset: ", dataset)
-		print("Classifier: ", algo)
 		print("Sample threshold: ", sample_threshold)
 		print("No. of folds: ", folds)
-
+		print("Fraction train data: ", fraction_train_data)
+		print("Fraction test data: ", fraction_test_data)
 		print("Total time: ", time()-time_start_all)
 		
 		print("\nDONE!\n")
@@ -585,11 +612,9 @@ for pmid in uniprot_pmids:
 		print("\n-----Settings-----", file=f)
 		print("Ontology: ", ont, file=f)
 		print("Dataset: ", dataset, file=f)
-		print("Classifier: ", algo, file=f)
 		print("Sample threshold: ", sample_threshold, file=f)
+                print("Fraction train data: ", fraction_train_data, file=f)
+                print("Fraction test data: ", fraction_test_data, file=f)
 		print("No. of folds: ", folds, file=f)
 		
 		print("Total time: ", time()-time_start_all, file=f)
-
-
-
