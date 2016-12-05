@@ -143,7 +143,9 @@ def propagate_go_terms(go_terms):
 def predict_go(test_point):
 	prob_ontology = []
 	for clf in classifiers:
-		prob = clf.predict_proba(test_point)[0][1]
+		prediction = clf.predict_proba(test_point)[0]
+		print("prediction: ", prediction)
+		prob = prediction[1]
 		prob_ontology.append(prob)
 	return prob_ontology
 
@@ -386,7 +388,7 @@ for node in go_ontology:
 				y_train.append(0)
 		pos_count = y_train.count(1)
 		if pos_count>=sample_threshold:
-			clf = MultinomialNB().fit(X_train, y_train)
+			clf = MultinomialNB(fit_prior=False).fit(X_train, y_train)
 			classifiers.append(clf)
 			classifier_keys.append(go_id)
 			pmids_train = np.array(id_train)
@@ -413,7 +415,9 @@ ids = test_dict.keys()
 time_start_test = time()
 prob_dict = {}
 for i in range(len(ids)):
+	print("PMID: ", ids[i])
 	test_point = test_dict[ids[i]]["X"]
+	predict_go(test_point)
 	prob_dict[ids[i]] = predict_go(test_point)
 time_end_test = time()-time_start_test
 	
@@ -480,12 +484,12 @@ for r in range(1,101):
 	print("Recall: ", final_recall)
 	print("Final F1: ", final_f1)
 	print("Final F1 prune: ", final_f1_trunc)
-precision_list.append(final_precision)
-recall_list.append(final_recall)
-f1_list.append(final_f1)
-precision_trunc_list.append(final_precision_trunc)
-recall_trunc_list.append(final_recall_trunc)
-f1_trunc_list.append(final_f1_trunc)
+	precision_list.append(final_precision)
+	recall_list.append(final_recall)
+	f1_list.append(final_f1)
+	precision_trunc_list.append(final_precision_trunc)
+	recall_trunc_list.append(final_recall_trunc)
+	f1_trunc_list.append(final_f1_trunc)
 
 
 max_f1 = max(f1_list)

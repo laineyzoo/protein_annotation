@@ -96,17 +96,6 @@ def remove_duplicate_papers(pmids_train, X_test, go_terms_test, pmids_test, data
 			#print("Test paper appears in train set")
 			indexes = list(np.where(pmids_test_array==test_point)[0])
 			delete_indexes.extend(indexes)
-	#no need for unique protein checking for Pubmed dataset
-#	if dataset == "U":
-#		for protein in unique_proteins:
-#			#get the pubmed ids of papers associated with this protein
-#			matching_records = data[data[:,0]==protein]
-#			matching_pmids = list(set(matching_records[:,2]))
-#			for pmid in matching_pmids:
-#				if pmid in pmids_train and pmid in pmids_test:
-#					indexes = list(np.where(pmids_test_array==pmid)[0])
-#					delete_indexes.extend(indexes)
-	#delete the datapoints from the test set meeting the above two conditions
 	delete_indexes = list(set(delete_indexes))
 	print("Papers to delete: ", len(delete_indexes))
 	for loc in sorted(delete_indexes, reverse=True):
@@ -155,17 +144,10 @@ def propagate_go_terms(go_terms):
 def predict_go(test_point):
 	prob_ontology = []
 	for clf in classifiers:
-		prob = clf.predict_proba(test_point)[0]
-		classes = clf.classes_
-		if len(classes)==2:
-			positive_prob = prob[classes[:]==1][0]
-		else:
-			if classes[0]==0:
-				positive_prob = 0.0
-			else:
-				positive_prob = 1.0
-		prob_ontology.append(positive_prob)
+		prob = clf.predict_proba(test_point)[0][1]
+		prob_ontology.append(prob)
 	return prob_ontology
+
 
 
 

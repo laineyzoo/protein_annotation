@@ -10,13 +10,9 @@ import re
 import sys, getopt
 from time import time
 
-#from nltk.corpus import stopwords
-#from nltk import PorterStemmer
 from stemming.porter2 import stem
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn import svm
 
 #list of stopwords
 f = open("english")
@@ -140,42 +136,29 @@ def propagate_go_terms(go_terms):
 	return list(set(label_list))
 
 
-#get posterior probabilities for this test point
+#predict one or more go annotations for this instance
 def predict_go(test_point):
 	prob_ontology = []
 	for clf in classifiers:
-		prob = clf.predict_proba(test_point)[0][1]
-		prob_ontology.append(prob)
+		prob = clf.predict_proba(test_point)[0]
+		classes = clf.classes_
+		if len(classes)==2:
+			positive_prob = prob[classes[:]==1][0]
+		else:
+			if classes[0]==0:
+				positive_prob = 0.0
+			else:
+				positive_prob = 1.0
+		prob_ontology.append(positive_prob)
 	return prob_ontology
-
-#create binary classifiers for the ontology
-def create_classifiers(sample_threshold, namespace):
-	classifiers = []
-	classifier_keys = []
-	for node in go_ontology:
-		go_id = node['id']
-		if node['namespace'] == namespace:
-			descendants = get_descendants(go_id)
-			y_train = []
-			for term in class_train:
-				if term in descendants:
-					y_train.append(1)
-				else:
-					y_train.append(0)
-			pos_count = y_train.count(1)
-			if pos_count>=sample_threshold:
-			clf = MultinomialNB().fit(X_train, y_train)
-			classifiers.append(clf)
-			classifier_keys.append(go_id)
-	return classifiers, classifier_keys
 
 
 
 ####################################### MAIN #############################################
 if __name__ == "__main__":
 	
-	if len(sys.argv[1:]) < 4:
-		print("This script requires at least 4 arguments: ontology, dataset, sample threshold, no. of folds")
+	if len(sys.argv[1:]) < 6:
+		print("This script requires at least 6 arguments: ontology, dataset, classifier type, sample threshold, no. of folds, save_results")
 		exit()
 	else:
 		time_start_all = time()
@@ -191,58 +174,85 @@ if __name__ == "__main__":
 
 		dataset = sys.argv[2]
 		if dataset=="U":
-			print("Train set: Uniprot abstracts")
-			print("Test set: Uniprot abstracts")
+			print("Train set: Uniprot abstracts \nTest set: Uniprot abstracts")
+		elif dataset == "H1":
+			print("Train set: Uniprot")
+			print("Test set: human proteins")
+		elif dataset == "H2":
+			print("Train set: human proteins")
+			print("Test set: human proteins")
+		elif dataset == "Y1":
+                        print("Train set: Uniprot")
+                        print("Test set: yeast proteins")	
+		elif dataset == "Y2":
+                        print("Train set: yeast proteins")
+                        print("Test set: yeast proteins")		
 		elif dataset == "P3":
-			print("Train set: PubMed papers w/ GO names AND Uniprot")
-			print("Test set: All Uniprot")
-		elif dataset == "P4":
-			print("Train set: PubMed papers w/ gene names AND Uniprot")
-			print("Test set: All Uniprot")
+			print("Dataset: PubMed papers w/ GO names AND Uniprot")
+		elif dataset=="P4":
+			print("Dataset: PubMed papers w/ gene names AND Uniprot")
 		else:
-			print("Invalid dataset. Valid datasets are U, P3 and P4. Exiting...")
+			print("Invalid dataset. Valid datasets are U, H1, H2, Y1, Y2, P3 and P4. Exiting...")
 			exit()
 
+		algo = sys.argv[3]
+		if algo != "S":
+			print("Classifier: Naive Bayes")
+		else:
+			print("Classifier: SVM")
 	
-		sample_threshold = int(sys.argv[3])
+		sample_threshold = int(sys.argv[4])
 		print("Sample threshold: ", sample_threshold)		
 		
-		folds = int(sys.argv[4])
+		folds = int(sys.argv[5])
 		print("Folds: ", folds)
+		
+		save_results = sys.argv[6]
+		print("Save results? ", save_results)
 
 		#open the dataset files and create the dataset
 		print("\nPreparing the dataset")
 
-		f = open("protein_records.json","r")
-		data = np.array(json.load(f))
-		f.close()
-		data = data[data[:,4]==ont]
-		if ont == "F":
-			data = data[data[:,1]!="GO:0005515"]
-		unique_proteins = list(set(data[:,0]))
-		uniprot_go_terms = list(set(data[:,1]))
-		uniprot_pmids = list(set(data[:,2]))
-		
-		f = open("pubmed_records.json","r")
-		data2 = json.load(f)
+f = open("protein_records.json","r")
+data = np.array(json.load(f))
+f.close()
+data = data[data[:,4]==ont]
+if ont == "F":
+	data = data[data[:,1]!="GO:0005515"]
+unique_proteins = list(set(data[:,0]))
+uniprot_go_terms = list(set(data[:,1]))
+uniprot_pmids = list(set(data[:,2]))
 
-		allowed_go_terms = go_parents.keys()
+f = open("pubmed_records.json","r")
+data2 = json.load(f)
+allowed_go_terms = go_parents.keys()
 
-		data_list = list()
-		class_list = list()
-		id_list = list()
+if dataset[0] == "H":
+	f = open("protein_human_records.json","r")
+	human = np.array(json.load(f))
+	human = human[human[:,2]!="IEA"]
+	human_ids= list(set(human[:,0]))
+	f = open("protein_yeast_records.json","r")
+	yeast = np.array(json.load(f))
+	yeast = yeast[yeast[:,2]!="IEA"]
+	yeast_ids = list(set(yeast[:,0]))
 
-		#dataset: UniProt abstracts
-		for pmid in uniprot_pmids:
-			text = text_preprocessing(data2[pmid])
-			matching_proteins = data[data[:,2]==pmid]
-			protein_ids = list(set(matching_proteins[:,0]))
-			go_terms_protein = list(set(matching_proteins[:,1]))
-			for term in go_terms_protein:
-				if term in allowed_go_terms:
-					data_list.append(text)
-					class_list.append(term)
-					id_list.append(pmid)
+data_list = list()
+class_list = list()
+id_list = list()
+
+if dataset == "U":
+#dataset: UniProt abstracts
+for pmid in uniprot_pmids:
+	text = text_preprocessing(data2[pmid])
+	matching_proteins = data[data[:,2]==pmid]
+	protein_ids = list(set(matching_proteins[:,0]))
+	go_terms_protein = list(set(matching_proteins[:,1]))
+	for term in go_terms_protein:
+		if (dataset not in ["H2","Y2"] and term in allowed_go_terms) or (dataset=="H2" and len(set(protein_ids)&set(human_ids))>0 and term in allowed_go_terms) or (dataset=="Y2" and len(set(protein_ids)&set(yeast_ids))>0 and term in allowed_go_terms):
+			data_list.append(text)
+			class_list.append(term)
+			id_list.append(pmid)
 
 		#dataset: Pubmed papers
 		if dataset[0] == "P":
@@ -252,8 +262,8 @@ if __name__ == "__main__":
 			uniprot_id_list = id_list
 			
 			if dataset == "P3":
-				fname1 = "pubmed_go_names_papers_dict_2.json"
-				fname2 = "pubmed_go_names_papers_2.json"
+				fname1 = "pubmed_go_names_papers_dict.json"
+				fname2 = "pubmed_go_names_papers.json"
 			else:
 				fname1 = "pubmed_gene_names_papers_dict.json"
 				fname2 = "pubmed_gene_names_papers.json"
@@ -313,7 +323,6 @@ if __name__ == "__main__":
 		recall_trunc_kfold = []
 		f1_trunc_kfold = []
 		thresh_trunc_kfold = []
-		file_to_write = {}
 		for fold  in range(folds):
 			print("Fold ", (fold+1))
 			test_start = int(fold*div)
@@ -342,40 +351,88 @@ if __name__ == "__main__":
 					X_train = data_list[train_start:train_end]+data_list[train_start2:train_end2]
 					class_train = class_list[train_start:train_end]+class_list[train_start2:train_end2]
 					id_train = id_list[train_start:train_end]+id_list[train_start2:train_end2]
+			
+			#For CC and MF P3, use 50% of the data. For BP and P4 use 1/5
+			if dataset[0] == "P":
+				if dataset[0]=="P3" and ont in ["C","F"]:
+					index = int(len(X_train)/2)
+				else:
+					index = int(len(X_train)/5)
+					if ont == "P":
+						index = int(len(X_train)/10)
+                                        	index_test = int(len(X_test)/10)
+                                        	X_test = X_test[:index_test]
+                                        	class_test = class_test[:index_test]
+                                        	id_test = id_test[:index_test]
+				X_train = X_train[:index]
+				class_train = class_train[:index]
+				id_train = id_train[:index]
 
 			#remove duplicate papers
 			(X_test, class_test, id_test) = remove_duplicate_papers(id_train, X_test, class_test, id_test, dataset)
 
+			print("Train set: ", len(X_train))
+			print("Test set: ", len(X_test))
 			#vectorize features
-			vectorizer = TfidfVectorizer()
+			vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5)
 			X_train = vectorizer.fit_transform(X_train)
 			X_test = vectorizer.transform(X_test)
 
 			#create binary classifiers
-			print("Create classifiers")
-			classifiers, classifier_keys = create_classifiers(sample_threshold, namespace)
+			print("Creating classifiers")
+			classifiers = []
+			classifier_keys = []
+			for node in go_ontology:
+				go_id = node['id']
+				children = get_children(go_id)
+				if node['namespace'] == namespace:
+					descendants = get_descendants(go_id)
+					y_train = list()
+					for term in class_train:
+						if term in descendants:
+							y_train.append(1)
+						else:
+							y_train.append(0)
+					pos_count = y_train.count(1)
+					if pos_count>=sample_threshold:
+						clf = MultinomialNB().fit(X_train, y_train)
+						classifiers.append(clf)
+						classifier_keys.append(go_id)
 			print("Done creating classifiers. Classifier count: ", len(classifiers))
 
 			#consolidate test set papers with more than 1 GO label
-			test_dict = {}
+			id_test_dict = {}
+			X_test_unique = []
 			for i in range(len(id_test)):
-				if id_test[i] not in test_dict.keys():
-					test_dict[id_test[i]] = {}
-					test_dict[id_test[i]]["X"] = X_test[i]
-					test_dict[id_test[i]]["y"] = []
-				if id_test[i] not in file_to_write.keys():
-					file_to_write[id_test[i]] = []
-				test_dict[id_test[i]]["y"].append(class_test[i])		
-	
+				if dataset in ["U","H2","Y2"]:
+					if id_test[i] not in id_test_dict.keys():
+						id_test_dict[id_test[i]] = []
+						X_test_unique.append(X_test[i])
+					id_test_dict[id_test[i]].append(class_test[i])
+				elif dataset[0] == "P":
+					#for Pubmed datasets, only test Uniprot papers
+					if id_test[i] in uniprot_pmids:
+						if id_test[i] not in id_test_dict.keys():
+							id_test_dict[id_test[i]] = []
+							X_test_unique.append(X_test[i])
+						id_test_dict[id_test[i]].append(class_test[i])
+				elif dataset in ["H1","Y1"]:
+					#for human/yeast data, only test papers w/ human/yeast-related GO annotations
+					matching_proteins = data[data[:,2]==id_test[i]]
+                        		protein_ids = list(set(matching_proteins[:,0]))
+					if (dataset == "H1" and len(set(protein_ids) & set(human_ids))>0) or (dataset == "Y1" and len(set(protein_ids) & set(yeast_ids))>0):
+						if id_test[i] not in id_test_dict.keys():
+							id_test_dict[id_test[i]] = []
+							X_test_unique.append(X_test[i])
+						id_test_dict[id_test[i]].append(class_test[i])
+
 			print("Running the classifiers on the test set")
-			time_start_test = time()
 			prob_dict = {}
-			ids = test_dict.keys()
+			ids = id_test_dict.keys()
 			for i in range(len(ids)):
-				test_point = test_dict[ids[i]]["X"]
+				test_point = X_test_unique[i]
 				prob_dict[ids[i]] = predict_go(test_point)
-			time_end_test = time()-time_start_test		
-	
+
 			print("Calculate F1/recall/precision by threshold")
 			precision_list = []
 			recall_list = []
@@ -394,9 +451,14 @@ if __name__ == "__main__":
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys+["GO:0008150"]))
 				else:
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys))
-				true_labels_trunc[i] = propagate_go_terms(trunc_labels)
-			for t in range(0,101):
-				thresh = float(t)/100
+				true_labels_trunc[i] = trunc_labels
+			if save_results == "Y":
+				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_"+algo+"_full.json","w") as f:
+					json.dump(true_labels, f)
+				with open("results/true_labels_kfold_GO_"+ont+"_"+dataset+"_"+algo+"_trunc.json","w") as f:
+					json.dump(trunc_labels,f)
+			for thresh in range(0,101):
+				thresh = float(thresh)/100
 				total_precision = 0
 				total_recall = 0
 				total_precision_trunc = 0
@@ -440,7 +502,9 @@ if __name__ == "__main__":
 				precision_trunc_list.append(final_precision_trunc)
 				recall_trunc_list.append(final_recall_trunc)
 				f1_trunc_list.append(final_f1_trunc)
-
+				if save_results=="Y" and fold == 0 and thresh > 0.0:
+					with open("results/predicted_labels_kfold_GO_"+ont+"_"+dataset+"_"+algo+"_"+str(thresh)+".json","w") as f:
+						json.dump(results_dict, f)
 			max_f1 = max(f1_list)
 			max_thresh = f1_list.index(max_f1)
 			max_precision = precision_list[max_thresh]
@@ -484,11 +548,48 @@ if __name__ == "__main__":
 		print("\n-----Settings-----")
 		print("Ontology: ", ont)
 		print("Dataset: ", dataset)
+		print("Classifier: ", algo)
 		print("Sample threshold: ", sample_threshold)
 		print("No. of folds: ", folds)
-		print("Fraction train data: ", fraction_train_data)
-		print("Fraction test data: ", fraction_test_data)
+
 		print("Total time: ", time()-time_start_all)
 		
 		print("\nDONE!\n")
+
+
+		logfile = "log_GO_kfold_"+ont+"_"+dataset+"_"+algo+"_"+str(sample_threshold)+"_"+str(folds)+"_trunc.txt"
+		f = open(logfile,"w")
+		print("\n-----Results-----", file=f)
+		print("Avg F1: ", np.mean(np.array(f1_kfold)), file=f)
+		print("Avg Precision: ", np.mean(np.array(precision_kfold)), file=f)
+		print("Avg Recall: ", np.mean(np.array(recall_kfold)), file=f)
+		print("Avg Threshold: ", np.mean(np.array(thresh_kfold)), file=f)
+
+		print("\nAvg F1 trunc: ", np.mean(np.array(f1_trunc_kfold)), file=f)
+		print("Avg Precision trunc: ", np.mean(np.array(precision_trunc_kfold)), file=f)
+		print("Avg Recall trunc: ", np.mean(np.array(recall_trunc_kfold)), file=f)
+		print("Avg Threshold trunc: ", np.mean(np.array(thresh_trunc_kfold)), file=f)
+		
+		for j in range(len(f1_kfold)):
+			print("\nFold ", j, file=f)
+			print("Max F1: ", f1_kfold[j],file=f)
+			print("Max Precision: ", precision_kfold[j],file=f)
+			print("Max Recall: ", recall_kfold[j],file=f)
+			print("Best Threshold: ", thresh_kfold[j],file=f)
+
+			print("Max F1: ", f1_trunc_kfold[j],file=f)
+			print("Max Precision: ", precision_trunc_kfold[j],file=f)
+			print("Max Recall: ", recall_trunc_kfold[j],file=f)
+			print("Best Threshold: ", thresh_trunc_kfold[j],file=f)
+		
+		print("\n-----Settings-----", file=f)
+		print("Ontology: ", ont, file=f)
+		print("Dataset: ", dataset, file=f)
+		print("Classifier: ", algo, file=f)
+		print("Sample threshold: ", sample_threshold, file=f)
+		print("No. of folds: ", folds, file=f)
+		
+		print("Total time: ", time()-time_start_all, file=f)
+
+
 
