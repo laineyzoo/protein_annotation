@@ -144,7 +144,6 @@ def predict_go(test_point):
 	prob_ontology = []
 	for clf in classifiers:
 		prediction = clf.predict_proba(test_point)[0]
-		print("prediction: ", prediction)
 		prob = prediction[1]
 		prob_ontology.append(prob)
 	return prob_ontology
@@ -413,12 +412,11 @@ for i in range(len(id_test)):
 print("Running the classifiers on the test set")
 ids = test_dict.keys()
 time_start_test = time()
-prob_dict = {}
+prob_dict_2 = {}
 for i in range(len(ids)):
-	print("PMID: ", ids[i])
+	print("i =", i)
 	test_point = test_dict[ids[i]]["X"]
-	predict_go(test_point)
-	prob_dict[ids[i]] = predict_go(test_point)
+	prob_dict_2[ids[i]] = predict_go(test_point)
 time_end_test = time()-time_start_test
 	
 print("Calculate F1/recall/precision by threshold")
@@ -445,45 +443,40 @@ recall_trunc_list = []
 f1_trunc_list = []
 for r in range(1,101):
 	thresh = r/100
-	print("Threshold: ", thresh)
-	total_precision = 0
-	total_recall = 0
-	total_precision_trunc = 0
-	total_recall_trunc = 0
-	pred_labels = {}
-	for i in ids:
-		all_labels = np.array(classifier_keys)
-		all_prob = np.array(prob_dict[i])
-		positive_labels = list(all_labels[all_prob[:]>=thresh])
-		positive_filtered = [p for p in positive_labels if p not in exclude_classes]
-		predicted_labels = propagate_go_terms(positive_filtered)
-		pred_labels[i] = predicted_labels
-		if len(predicted_labels)>0:
-			precision,recall = evaluate_prediction(true_labels[i], predicted_labels)
-			total_precision+=precision
-			total_recall+=recall
-			precision,recall = evaluate_prediction(true_labels_trunc[i], predicted_labels)
-			total_precision_trunc+=precision
-			total_recall_trunc+=recall
-		else:
-			total_precision+=0
-			total_recall+=0
-			total_precision_trunc+=0
-			total_recall_trunc+=0
-	final_precision = total_precision/len(ids)
-	final_recall = total_recall/len(ids)
-	final_precision_trunc = total_precision_trunc/len(ids)
-	final_recall_trunc = total_recall_trunc/len(ids)
-	final_f1 = 0
-	final_f1_trunc = 0
-	if final_precision+final_recall>0:
-		final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
-	if final_precision_trunc+final_recall_trunc>0:
-		final_f1_trunc = (2*final_precision_trunc*final_recall_trunc)/(final_precision_trunc+final_recall_trunc)
-	print("Precision: ", final_precision)
-	print("Recall: ", final_recall)
-	print("Final F1: ", final_f1)
-	print("Final F1 prune: ", final_f1_trunc)
+print("Threshold: ", thresh)
+total_precision = 0
+total_recall = 0
+total_precision_trunc = 0
+total_recall_trunc = 0
+pred_labels = {}
+for i in ids:
+	all_labels = np.array(classifier_keys)
+	all_prob = np.array(prob_dict[i])
+	positive_labels = list(all_labels[all_prob[:]>=thresh])
+	positive_filtered = [p for p in positive_labels if p not in exclude_classes]
+	predicted_labels = propagate_go_terms(positive_filtered)
+	pred_labels[i] = predicted_labels
+	if len(predicted_labels)>0:
+		precision,recall = evaluate_prediction(true_labels[i], predicted_labels)
+		total_precision+=precision
+		total_recall+=recall
+		precision,recall = evaluate_prediction(true_labels_trunc[i], predicted_labels)
+		total_precision_trunc+=precision
+		total_recall_trunc+=recall
+final_precision = total_precision/len(ids)
+final_recall = total_recall/len(ids)
+final_precision_trunc = total_precision_trunc/len(ids)
+final_recall_trunc = total_recall_trunc/len(ids)
+final_f1 = 0
+final_f1_trunc = 0
+if final_precision+final_recall>0:
+	final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
+if final_precision_trunc+final_recall_trunc>0:
+	final_f1_trunc = (2*final_precision_trunc*final_recall_trunc)/(final_precision_trunc+final_recall_trunc)
+print("Precision: ", final_precision)
+print("Recall: ", final_recall)
+print("Final F1: ", final_f1)
+print("Final F1 prune: ", final_f1_trunc)
 	precision_list.append(final_precision)
 	recall_list.append(final_recall)
 	f1_list.append(final_f1)
@@ -539,5 +532,10 @@ for pmid in unique_pmids:
 	paper_id.append(pmid)
 
 
+def softmax(x):
+	e_x = np.exp(x - np.max(x))
+	return e_x / e_x.sum(axis=0)
 
 
+def softmax(x):
+	return np.exp(x) / np.sum(np.exp(x), axis=0)

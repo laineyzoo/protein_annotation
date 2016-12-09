@@ -139,11 +139,11 @@ if __name__ == "__main__":
 		time_start_all = time()
 
 		#prepare train set
-		fname1 = "pubmed_hpo_papers_dict.json"
-		fname2 = "pubmed_hpo_papers.json"
+		fname1 = "hpo_train_dict.json"
+		fname2 = "hpo_train_papers.json"
 
 		f = open(fname1,"r")
-		hpo_papers_dict = json.load(f)
+		hpo_keys_dict = json.load(f)
 		f.close()
 
 		f = open(fname2,"r")

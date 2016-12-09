@@ -313,7 +313,7 @@ if __name__ == "__main__":
 		recall_trunc_kfold = []
 		f1_trunc_kfold = []
 		thresh_trunc_kfold = []
-		file_to_write = {}
+		#file_to_write = {}
 		for fold  in range(folds):
 			print("Fold ", (fold+1))
 			test_start = int(fold*div)
@@ -363,10 +363,10 @@ if __name__ == "__main__":
 					test_dict[id_test[i]] = {}
 					test_dict[id_test[i]]["X"] = X_test[i]
 					test_dict[id_test[i]]["y"] = []
-				if id_test[i] not in file_to_write.keys():
-					file_to_write[id_test[i]] = []
 				test_dict[id_test[i]]["y"].append(class_test[i])		
-	
+				#if id_test[i] not in file_to_write.keys():
+				#	file_to_write[id_test[i]] = []
+
 			print("Running the classifiers on the test set")
 			time_start_test = time()
 			prob_dict = {}
@@ -392,11 +392,13 @@ if __name__ == "__main__":
 				#labels of each test point excluding those dont have classifiers
 				if ont == "F":
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys+["GO:0008150"]))
+				elif ont == "P":
+					trunc_labels = list(set(true_labels[i]) & set(classifier_keys+["GO:0003674"]))
 				else:
 					trunc_labels = list(set(true_labels[i]) & set(classifier_keys))
 				true_labels_trunc[i] = propagate_go_terms(trunc_labels)
-			for t in range(0,101):
-				thresh = float(t)/100
+			for r in range(1,101):
+				thresh = r/100
 				total_precision = 0
 				total_recall = 0
 				total_precision_trunc = 0
@@ -417,23 +419,16 @@ if __name__ == "__main__":
 						precision,recall = evaluate_prediction(true_labels_trunc[i], predicted_labels)
 						total_precision_trunc+=precision
 						total_recall_trunc+=recall
-					else:
-						total_precision+=0
-						total_recall+=0
-						total_precision_trunc+=0
-						total_recall_trunc+=0
 				final_precision = total_precision/len(ids)
 				final_recall = total_recall/len(ids)
 				final_precision_trunc = total_precision_trunc/len(ids)
 				final_recall_trunc = total_recall_trunc/len(ids)
+				final_f1 = 0
+				final_f1_trunc = 0
 				if final_precision+final_recall>0:
 					final_f1 = (2*final_precision*final_recall)/(final_precision+final_recall)
-				else:
-					final_f1 = 0
 				if final_precision_trunc+final_recall_trunc>0:
 					final_f1_trunc = (2*final_precision_trunc*final_recall_trunc)/(final_precision_trunc+final_recall_trunc)
-				else:
-					final_f1_trunc = 0
 				precision_list.append(final_precision)
 				recall_list.append(final_recall)
 				f1_list.append(final_f1)
